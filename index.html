@@ -6,6 +6,20 @@
     <meta name="theme-color" content="#2563eb" />
     <title>Stokku — Inventori</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <style>
+      /* Fallback navigasi mobile: tetap tampil meski proses data/API gagal. */
+      @media (max-width: 1023px) {
+        #mobileNav {
+          position: fixed !important; left: 0; right: 0; bottom: 0; z-index: 9999 !important;
+          display: flex !important; min-height: 72px; background: #fff;
+          border-top: 1px solid #e2e8f0; box-shadow: 0 -8px 24px rgba(15,23,42,.10);
+          padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
+        }
+      }
+      @media (min-width: 1024px) { #mobileNav { display: none !important; } }
+      #mobileNav button { border: 0; background: transparent; cursor: pointer; }
+      #mobileNav button:active { transform: scale(.96); }
+    </style>
   </head>
 
   <body class="min-h-screen bg-slate-50 font-sans text-slate-900">
@@ -62,7 +76,7 @@
         <section id="transactionPage" class="page hidden space-y-5">
           <div><h2 class="text-2xl font-black">Input transaksi</h2><p class="mt-1 text-sm text-slate-500">Pilih produk, warna, lalu size dari stok jual.</p></div>
           <div class="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-            <section class="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between"><div><h3 class="font-extrabold">1. Pilih produk</h3><p class="mt-1 text-sm text-slate-400">Hanya stok siap jual.</p></div><button id="resetTransactionButton" class="text-sm font-bold text-blue-600">Reset</button></div><div id="transactionCatalog" class="mt-5 grid gap-3 sm:grid-cols-2"></div><div id="transactionSelection" class="mt-5"></div></section>
+            <section class="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between"><div><h3 class="font-extrabold">1. Pilih produk</h3><p class="mt-1 text-sm text-slate-400">Hanya stok siap jual.</p></div><button type="button" id="resetTransactionButton" class="text-sm font-bold text-blue-600">Reset</button></div><div id="transactionCatalog" class="mt-5 grid gap-3 sm:grid-cols-2"></div><div id="transactionSelection" class="mt-5"></div></section>
             <form id="transactionForm" class="h-fit rounded-3xl bg-slate-950 p-6 text-white"><p class="text-sm font-medium text-slate-400">2. Buat transaksi</p><h3 id="selectedVariantName" class="mt-2 text-xl font-extrabold">Pilih produk dulu</h3><div id="priceRange" class="mt-5 rounded-2xl bg-white/10 p-4 text-sm text-slate-300">Pilih warna dan size untuk melihat harga.</div><div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-1"><label class="text-sm font-bold">Jumlah<input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label><label class="text-sm font-bold">Harga jual / unit<input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label></div><div class="mt-5 flex items-center justify-between border-y border-white/10 py-4"><span class="text-sm text-slate-400">Total transaksi</span><strong id="transactionTotal" class="text-2xl font-black">Rp0</strong></div><button id="saveTransactionButton" disabled class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white disabled:bg-white/20">Simpan transaksi</button></form>
           </div>
         </section>
@@ -71,7 +85,12 @@
       </div>
     </main>
 
-    <nav id="mobileNav" class="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-100 bg-white px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_30px_rgba(15,23,42,.06)] lg:hidden"></nav>
+    <nav id="mobileNav" class="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-100 bg-white px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_30px_rgba(15,23,42,.06)] lg:hidden">
+      <button data-page="dashboard" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-blue-600"><span class="grid size-9 place-items-center rounded-xl bg-blue-50 text-base">⌂</span>Home</button>
+      <button data-page="stock" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-slate-500"><span class="grid size-9 place-items-center rounded-xl text-base">▦</span>Stok</button>
+      <button data-page="transaction" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-slate-500"><span class="grid size-9 place-items-center rounded-xl text-base">＋</span>Transaksi</button>
+      <button data-page="history" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-slate-500"><span class="grid size-9 place-items-center rounded-xl text-base">◷</span>History</button>
+    </nav>
 
     <div id="productModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5"><div class="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-4xl sm:rounded-3xl sm:p-6"><div class="flex items-start justify-between gap-4"><div><p class="text-xs font-black tracking-widest text-blue-600">PRODUK BARU</p><h2 class="mt-1 text-xl font-black">Tambah produk & stok awal</h2><p class="mt-1 text-sm text-slate-500">Satu gambar utama untuk produk. Warna cukup dipilih, dan bisa custom.</p></div><button data-close="productModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><form id="productForm" class="mt-6"><div class="grid gap-4 sm:grid-cols-2"><label class="text-sm font-bold text-slate-700">Merek<input id="productName" required placeholder="Contoh: Adidas" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Seri<input id="productModel" required placeholder="Contoh: Warzawa" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label></div><label class="mt-4 block text-sm font-bold text-slate-700">Gambar utama produk<input id="productImage" type="file" accept="image/jpeg,image/png,image/webp" required class="mt-2 block w-full rounded-xl border border-slate-200 p-2 text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-blue-50 file:px-2 file:py-1.5 file:font-bold file:text-blue-700" /></label><div class="mt-6 flex items-center justify-between"><div><h3 class="font-extrabold">Seri warna</h3><p class="mt-1 text-xs text-slate-500">Tambah semua warna produk sekaligus.</p></div><button id="addColorButton" type="button" class="rounded-xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">+ Warna</button></div><div id="colorGroups" class="mt-4 space-y-4"></div><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="productModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan produk</button></div></form></div></div>
 
@@ -102,6 +121,7 @@
       const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
       const photoUrl = (item) => item.image_url?.startsWith("http") ? item.image_url : `${API_BASE}${item.image_url || ""}`;
       const emptyState = (message) => `<div class="rounded-3xl bg-white p-8 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-100">${message}</div>`;
+      const sameId = (a, b) => String(a ?? "") === String(b ?? "");
 
       async function request(path, options = {}) {
         const response = await fetch(`${API_BASE}${path}`, options);
@@ -162,7 +182,7 @@
 
       // ===== 3. RENDER HALAMAN =====
       function renderNavigation() {
-        const items = [["dashboard", "⌂", "Home"], ["stock", "▦", "Stok"], ["history", "◷", "History"]];
+        const items = [["dashboard", "⌂", "Home"], ["stock", "▦", "Stok"], ["transaction", "＋", "Transaksi"], ["history", "◷", "History"]];
         $("desktopNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold ${state.page === page ? "bg-white/12 text-white" : "text-slate-400 hover:bg-white/8 hover:text-white"}"><span class="grid size-7 place-items-center rounded-lg ${state.page === page ? "bg-blue-600" : "bg-white/5"}">${icon}</span>${label}</button>`).join("");
         $("mobileNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold ${state.page === page ? "text-blue-600" : "text-slate-400"}"><span class="grid size-9 place-items-center rounded-xl text-base ${state.page === page ? "bg-blue-50" : ""}">${icon}</span>${label}</button>`).join("");
       }
@@ -177,8 +197,8 @@
         $("soldQtyMetric").textContent = `${data.sold_qty_today || 0} Unit`;
         $("capitalMetric").textContent = `Modal ${rupiah(data.capital)}`;
         $("dashboardSubtitle").textContent = data.transaction_count_today ? `${data.transaction_count_today} transaksi berhasil dicatat hari ini.` : "Belum ada transaksi tercatat hari ini.";
-        $("recentTransactions").innerHTML = data.recent_transactions.length ? data.recent_transactions.map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p></div><strong class="text-sm">${rupiah(item.total)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
-        $("topProducts").innerHTML = data.top_products.length ? data.top_products.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${item.sold_qty} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
+        $("recentTransactions").innerHTML = (Array.isArray(data.recent_transactions) ? data.recent_transactions : []).length ? (Array.isArray(data.recent_transactions) ? data.recent_transactions : []).map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p></div><strong class="text-sm">${rupiah(item.total)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
+        $("topProducts").innerHTML = (Array.isArray(data.top_products) ? data.top_products : []).length ? (Array.isArray(data.top_products) ? data.top_products : []).map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${item.sold_qty} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
       }
 
       function renderStock() {
@@ -216,22 +236,22 @@
 
       function renderTransaction() {
         const products = groupedProducts("sale");
-        const selectedProduct = products.find((product) => product.product_id === state.transactionProductId);
-        $("transactionCatalog").innerHTML = products.length ? products.map((product) => `<button data-transaction-product="${product.product_id}" class="overflow-hidden rounded-2xl border text-left ${product.product_id === state.transactionProductId ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-100"}"><div class="flex gap-3 p-3">${productPhoto(product, "size-16 shrink-0 rounded-xl")}<div class="min-w-0"><p class="truncate font-bold">${escapeHtml(product.product_name)}</p><p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(product.model)}</p><p class="mt-2 text-xs font-bold text-blue-600">${product.saleTotal} unit siap jual</p></div></div></button>`).join("") : `<p class="col-span-full rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Belum ada stok jual.</p>`;
+        const selectedProduct = products.find((product) => sameId(product.product_id, state.transactionProductId));
+        $("transactionCatalog").innerHTML = products.length ? products.map((product) => `<button data-transaction-product="${product.product_id}" class="overflow-hidden rounded-2xl border text-left ${sameId(product.product_id, state.transactionProductId) ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-100"}"><div class="flex gap-3 p-3">${productPhoto(product, "size-16 shrink-0 rounded-xl")}<div class="min-w-0"><p class="truncate font-bold">${escapeHtml(product.product_name)}</p><p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(product.model)}</p><p class="mt-2 text-xs font-bold text-blue-600">${product.saleTotal} unit siap jual</p></div></div></button>`).join("") : `<p class="col-span-full rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Belum ada stok jual.</p>`;
         $("transactionSelection").innerHTML = selectedProduct ? transactionSelection(selectedProduct) : "";
         updateTransactionSummary();
       }
 
       function transactionSelection(product) {
         const colors = groupedColors(product);
-        const color = colors.find((item) => item.color_id === state.transactionColorId) || colors[0];
+        const color = colors.find((item) => sameId(item.color_id, state.transactionColorId)) || colors[0];
         if (!state.transactionColorId && color) state.transactionColorId = color.color_id;
         const sizes = color.variants.filter((variant) => variant.sale_qty > 0);
-        return `<div class="rounded-2xl bg-slate-50 p-4"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${item.color_id === state.transactionColorId ? "border-blue-600 bg-blue-600 text-white" : "border-white bg-white text-slate-600"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${variant.id === state.transactionVariantId ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-slate-400">Warna ini belum punya stok jual.</span>`}</div></div>`;
+        return `<div class="rounded-2xl bg-slate-50 p-4"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${sameId(item.color_id, state.transactionColorId) ? "border-blue-600 bg-blue-600 text-white" : "border-white bg-white text-slate-600"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${sameId(variant.id, state.transactionVariantId) ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-slate-400">Warna ini belum punya stok jual.</span>`}</div></div>`;
       }
 
       function updateTransactionSummary() {
-        const variant = state.variants.find((item) => item.id === state.transactionVariantId);
+        const variant = state.variants.find((item) => sameId(item.id, state.transactionVariantId));
         if (!variant) {
           $("selectedVariantName").textContent = "Pilih produk dulu"; $("priceRange").textContent = "Pilih warna dan size untuk melihat harga.";
           [$("transactionQty"), $("transactionPrice"), $("saveTransactionButton")].forEach((element) => element.disabled = true);
@@ -247,7 +267,7 @@
       }
 
       function renderHistory() {
-        const records = state.transactions.filter((item) => item.created_at.slice(0, 10) === state.historyDate);
+        const records = (Array.isArray(state.transactions) ? state.transactions : []).filter((item) => String(item.created_at || "").slice(0, 10) === state.historyDate);
         renderHistoryDates();
         $("historyCards").innerHTML = records.length ? records.map((item) => `<article class="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100">${productPhoto(item, "size-16 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-black">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-sm text-slate-500">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-2 text-xs text-slate-400">${escapeHtml(item.invoice_no)} · ${dateTime(item.created_at)}</p></div><div class="text-right"><p class="font-black">${rupiah(item.total)}</p><p class="mt-1 text-xs text-slate-400">${rupiah(item.unit_price)}/unit</p></div></article>`).join("") : emptyState("Belum ada transaksi pada tanggal ini.");
       }
@@ -260,14 +280,14 @@
       }
 
       function renderSalesSheet(view = "sell") {
-        const product = groupedProducts("sale").find((item) => item.product_id === state.saleProductId);
+        const product = groupedProducts("sale").find((item) => sameId(item.product_id, state.saleProductId));
         if (view === "cart" || !product) { renderCartSheet(); return; }
         const colors = groupedColors(product);
-        const activeColor = colors.find((color) => color.color_id === state.saleColorId) || colors[0];
+        const activeColor = colors.find((color) => sameId(color.color_id, state.saleColorId)) || colors[0];
         if (!state.saleColorId && activeColor) state.saleColorId = activeColor.color_id;
         const variants = activeColor.variants.filter((variant) => variant.sale_qty > 0);
-        const variant = variants.find((item) => item.id === state.saleVariantId);
-        $("salesSheetContent").innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-xs font-black tracking-widest text-blue-600">JUAL PRODUK</p><h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2><p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)}</p></div><div class="flex gap-2"><button data-open-cart class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white">Keranjang ${state.cart.length}</button><button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div></div><div class="mt-6"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((color) => `<button data-sale-color="${color.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${color.color_id === state.saleColorId ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">${productPhoto(color, "size-6 rounded-full")} ${escapeHtml(color.color)}</button>`).join("")}</div></div><div class="mt-6"><p class="text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${item.id === state.saleVariantId ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}</div></div>${variant ? `<div class="mt-6 rounded-2xl bg-slate-50 p-4"><p class="font-bold">${escapeHtml(variant.color)} · Size ${escapeHtml(variant.size)}</p><p class="mt-1 text-sm text-slate-500">Stok ${variant.sale_qty} · Harga ${rupiah(variant.minimum_price)} — ${rupiah(variant.normal_price)}</p><div class="mt-4 grid gap-3 sm:grid-cols-2"><label class="text-sm font-bold">Jumlah<input id="saleQty" type="number" min="1" max="${variant.sale_qty}" value="1" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold">Harga jual<input id="salePrice" type="number" min="${variant.minimum_price}" max="${variant.normal_price}" value="${variant.normal_price}" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label></div><button data-add-cart class="mt-4 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Masukkan keranjang</button></div>` : `<p class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-400">Pilih size untuk melanjutkan.</p>`}`;
+        const variant = variants.find((item) => sameId(item.id, state.saleVariantId));
+        $("salesSheetContent").innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-xs font-black tracking-widest text-blue-600">JUAL PRODUK</p><h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2><p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)}</p></div><div class="flex gap-2"><button data-open-cart class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white">Keranjang ${state.cart.length}</button><button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div></div><div class="mt-6"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((color) => `<button data-sale-color="${color.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${sameId(color.color_id, state.saleColorId) ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">${productPhoto(color, "size-6 rounded-full")} ${escapeHtml(color.color)}</button>`).join("")}</div></div><div class="mt-6"><p class="text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${sameId(item.id, state.saleVariantId) ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}</div></div>${variant ? `<div class="mt-6 rounded-2xl bg-slate-50 p-4"><p class="font-bold">${escapeHtml(variant.color)} · Size ${escapeHtml(variant.size)}</p><p class="mt-1 text-sm text-slate-500">Stok ${variant.sale_qty} · Harga ${rupiah(variant.minimum_price)} — ${rupiah(variant.normal_price)}</p><div class="mt-4 grid gap-3 sm:grid-cols-2"><label class="text-sm font-bold">Jumlah<input id="saleQty" type="number" min="1" max="${variant.sale_qty}" value="1" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold">Harga jual<input id="salePrice" type="number" min="${variant.minimum_price}" max="${variant.normal_price}" value="${variant.normal_price}" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label></div><button data-add-cart class="mt-4 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Masukkan keranjang</button></div>` : `<p class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-400">Pilih size untuk melanjutkan.</p>`}`;
       }
 
       function renderCartSheet() {
@@ -275,12 +295,12 @@
       }
 
       function addToCart() {
-        const variant = state.variants.find((item) => item.id === state.saleVariantId);
+        const variant = state.variants.find((item) => sameId(item.id, state.saleVariantId));
         const qty = Number($("saleQty").value);
         const unitPrice = Number($("salePrice").value);
         if (!variant || !qty || qty > variant.sale_qty) return toast("Jumlah melebihi stok jual.", true);
         if (unitPrice < variant.minimum_price || unitPrice > variant.normal_price) return toast("Harga harus berada di rentang yang diizinkan.", true);
-        const existing = state.cart.find((item) => item.variant_id === variant.id && item.unit_price === unitPrice);
+        const existing = state.cart.find((item) => sameId(item.variant_id, variant.id) && item.unit_price === unitPrice);
         if (existing) { if (existing.qty + qty > variant.sale_qty) return toast("Jumlah di keranjang melebihi stok jual.", true); existing.qty += qty; }
         else state.cart.push({ ...variant, variant_id: variant.id, qty, unit_price: unitPrice });
         renderCartButton(); toast("Produk masuk ke keranjang."); renderSalesSheet("cart");
@@ -300,7 +320,7 @@
 
       // ===== 4. DETAIL PRODUK & FORM =====
       function renderDetail(productId, selectedColorId = null) {
-        const product = groupedProducts("all").find(p => p.String(p.product_id) === String(productId)); if (!product) return;
+        const product = groupedProducts("all").find(p => sameId(p.product_id, productId)); if (!product) return;
         const colors = groupedColors(product);
         const active = colors.find(c => String(c.color_id) === String(selectedColorId)) || colors[0];
         const sizes = active?.variants || [];
@@ -309,7 +329,7 @@
       function openDetail(productId) { state.detailProductId=productId; state.detailColorId=null; renderDetail(productId); showModal("detailModal"); }
 
       function openProductEditModal(productId) {
-        const product = groupedProducts("all").find((p) => p.String(p.product_id) === String(productId));
+        const product = groupedProducts("all").find((p) => sameId(p.product_id, productId));
         const base = state.products.find((p) => String(p.id) === String(productId));
         if (!product && !base) return toast("Produk tidak ditemukan.", true);
         const source = product || { product_id: base.id, product_name: base.name, model: base.model };
@@ -321,8 +341,8 @@
       }
 
       function openTransferModal(productIdOrVariantId, isVariant = false) {
-        const productId = isVariant ? state.variants.find(v => String(v.id) === String(productIdOrVariantId))?.product_id : String(productIdOrVariantId);
-        const warehouseVariants = state.variants.filter(v => v.product_id === productId && v.warehouse_qty > 0);
+        const productId = isVariant ? state.variants.find(v => sameId(v.id, productIdOrVariantId))?.product_id : productIdOrVariantId;
+        const warehouseVariants = state.variants.filter(v => sameId(v.product_id, productId) && v.warehouse_qty > 0);
         if (!warehouseVariants.length) return toast("Produk ini tidak punya stok gudang yang bisa dipindahkan.", true);
         $("transferVariant").innerHTML = warehouseVariants.map(v => `<option value="${v.id}">${escapeHtml(v.color)} · Size ${escapeHtml(v.size)} · ${v.warehouse_qty} unit</option>`).join("");
         const selected = isVariant ? warehouseVariants.find(v => String(v.id) === String(productIdOrVariantId)) : warehouseVariants[0];
@@ -353,19 +373,33 @@
 
       // ===== 5. LOAD DATA & INTERAKSI =====
       async function loadAll() {
-        const [dashboard, products, variants, transactions] = await Promise.all([request("/api/dashboard"), request("/api/products"), request("/api/variants"), request("/api/transactions")]);
-        state.dashboard = dashboard; state.products = products; state.variants = variants; state.transactions = transactions;
-        renderDashboard(); renderStock(); renderTransaction(); renderHistory(); renderNavigation();
+        // Navigasi tidak boleh bergantung pada API. Render dulu agar aplikasi tetap bisa dipakai.
+        renderNavigation();
+        const [dashboard, products, variants, transactions] = await Promise.all([
+          request("/api/dashboard"), request("/api/products"), request("/api/variants"), request("/api/transactions")
+        ]);
+        state.dashboard = dashboard || {};
+        state.products = Array.isArray(products) ? products : (products?.items || products?.products || []);
+        state.variants = Array.isArray(variants) ? variants : (variants?.items || variants?.variants || []);
+        state.transactions = Array.isArray(transactions) ? transactions : (transactions?.items || transactions?.transactions || []);
+        renderDashboard();
+        renderStock();
+        renderTransaction();
+        renderHistory();
+        renderNavigation();
       }
 
       function switchPage(page) {
+        const titles = { dashboard: "Dashboard", stock: "Stok", transaction: "Transaksi", history: "History Transaksi" };
+        if (!titles[page]) page = "dashboard";
         state.page = page;
         document.querySelectorAll(".page").forEach((section) => section.classList.toggle("hidden", section.id !== `${page}Page`));
-        $("pageTitle").textContent = ({ dashboard: "Dashboard", stock: "Stok", transaction: "Transaksi", history: "History Transaksi" })[page];
-        renderNavigation(); window.scrollTo({ top: 0, behavior: "smooth" });
+        $("pageTitle").textContent = titles[page];
+        renderNavigation();
+        window.scrollTo({ top: 0, behavior: "smooth" });
       }
 
-      document.addEventListener("click", (event) => {
+      document.addEventListener("click", async (event) => {
         const page = event.target.closest("[data-page]")?.dataset.page; if (page) switchPage(page);
         const go = event.target.closest("[data-go]")?.dataset.go; if (go) switchPage(go);
         const close = event.target.closest("[data-close]")?.dataset.close; if (close) hideModal(close);
@@ -376,10 +410,10 @@
         const transferProduct = event.target.closest("[data-transfer-product]")?.dataset.transferProduct; if (transferProduct) { openTransferModal(transferProduct); return; }
         const sellProduct = event.target.closest("[data-sell-product]")?.dataset.sellProduct; if (sellProduct) openSalesSheet(sellProduct);
         const saleColor = event.target.closest("[data-sale-color]")?.dataset.saleColor; if (saleColor) { state.saleColorId = saleColor; state.saleVariantId = null; renderSalesSheet(); }
-        const saleVariant = event.target.closest("[data-sale-variant]")?.dataset.saleVariant; if (saleVariant) { state.saleVariantId = Number(saleVariant); renderSalesSheet(); }
+        const saleVariant = event.target.closest("[data-sale-variant]")?.dataset.saleVariant; if (saleVariant) { state.saleVariantId = saleVariant; renderSalesSheet(); }
         if (event.target.closest("[data-add-cart]")) addToCart();
         if (event.target.closest("[data-open-cart]")) renderSalesSheet("cart");
-        const removeCart = event.target.closest("[data-remove-cart]")?.dataset.removeCart; if (removeCart) { state.cart = state.cart.filter((item) => item.variant_id !== Number(removeCart)); renderCartButton(); renderSalesSheet("cart"); }
+        const removeCart = event.target.closest("[data-remove-cart]")?.dataset.removeCart; if (removeCart) { state.cart = state.cart.filter((item) => !sameId(item.variant_id, removeCart)); renderCartButton(); renderSalesSheet("cart"); }
         if (event.target.closest("[data-checkout-cart]")) checkoutCart();
         const historyDate = event.target.closest("[data-history-date]")?.dataset.historyDate; if (historyDate) { state.historyDate = historyDate; renderHistory(); }
         if (event.target.closest("#customDateButton")) { const input = $("customHistoryDate"); input.showPicker ? input.showPicker() : input.click(); }
@@ -388,11 +422,11 @@
         const transactionColor = event.target.closest("[data-transaction-color]")?.dataset.transactionColor;
         if (transactionColor) { state.transactionColorId = transactionColor; state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
         const transactionVariant = event.target.closest("[data-transaction-variant]")?.dataset.transactionVariant;
-        if (transactionVariant) { state.transactionVariantId = Number(transactionVariant); $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
+        if (transactionVariant) { state.transactionVariantId = transactionVariant; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
         const edit = event.target.closest("[data-edit-variant]")?.dataset.editVariant; if (edit) { hideModal("detailModal"); openVariantModal(state.variants.find((variant) => String(variant.id) === String(edit))); }
-        const add = event.target.closest("[data-add-to-product]")?.dataset.addToProduct; if (add) { hideModal("detailModal"); openVariantModal(null, Number(add)); }
+        const add = event.target.closest("[data-add-to-product]")?.dataset.addToProduct; if (add) { hideModal("detailModal"); openVariantModal(null, add); }
         const addColor = event.target.closest("[data-add-color-size]"); if (addColor) { const v=state.variants.find(x=>String(x.product_id)===String(addColor.dataset.productId) && String(x.color_id)===String(addColor.dataset.addColorSize)); hideModal("detailModal"); openVariantModal(null, addColor.dataset.productId, v?.color||"", v?.color_hex||""); }
-        const transfer = event.target.closest("[data-transfer-variant]")?.dataset.transferVariant; if (transfer) { hideModal("detailModal"); openTransferModal(Number(transfer), true); }
+        const transfer = event.target.closest("[data-transfer-variant]")?.dataset.transferVariant; if (transfer) { hideModal("detailModal"); openTransferModal(transfer, true); }
         const deleteVariantId = event.target.closest("[data-delete-variant]")?.dataset.deleteVariant; if (deleteVariantId) { if(!confirm("Hapus varian ini? Tindakan tidak bisa dibatalkan.")) return; try { await request(`/api/variants/${deleteVariantId}`, {method:"DELETE"}); toast("Varian berhasil dihapus."); await loadAll(); renderDetail(state.detailProductId); } catch(error){ toast(error.message,true); } return; }
         const deleteProductId = event.target.closest("[data-delete-product]")?.dataset.deleteProduct; if (deleteProductId) { if(!confirm("Hapus produk beserta semua variannya?")) return; try { await request(`/api/products/${deleteProductId}`, {method:"DELETE"}); hideModal("detailModal"); toast("Produk berhasil dihapus."); await loadAll(); switchPage("stock"); } catch(error){ toast(error.message,true); } return; }
       });
@@ -465,7 +499,9 @@
         } catch (error) { toast(error.message, true); }
       });
 
-      loadAll().catch((error) => toast(error.message, true));
+      // Render navigasi langsung saat halaman dibuka, lalu muat data di belakang.
+      renderNavigation();
+      loadAll().catch((error) => { console.error(error); toast(error.message, true); });
     </script>
   </body>
 </html>
