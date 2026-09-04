@@ -1,9 +1,11 @@
 from __future__ import annotations
 import os, uuid
+from pathlib import Path
 from datetime import datetime, timezone
 from contextlib import asynccontextmanager
 from typing import Literal
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from pymongo import MongoClient, ASCENDING, DESCENDING
@@ -244,3 +246,14 @@ def dashboard():
       v,p,c=get_variant(t['variant_id']); a=agg.setdefault(p['_id'],{'product_name':p['name'],'model':p['model'],'color':c['name'],'size':v['size'],'image_url':p.get('image_path'),'sold_qty':0,'revenue':0}); a['sold_qty']+=t['qty']; a['revenue']+=t['total']
     top=sorted(agg.values(),key=lambda a:(a['sold_qty'],a['revenue']),reverse=True)[:5]
     return {'warehouse_qty':wh,'sale_qty':sq,'capital':capital,'revenue_today':sum(t['total'] for t in ts),'sold_qty_today':sum(t['qty'] for t in ts),'profit_today':sum(t['total']-t['qty']*t['hpp_snapshot'] for t in ts),'transaction_count_today':len(ts),'recent_transactions':recent,'top_products':top}
+
+# Serve the bundled frontend when deployed as a Python/FastAPI app (including Vercel).
+BASE_DIR = Path(__file__).resolve().parent
+
+@app.get('/', include_in_schema=False)
+def frontend():
+    index_file = BASE_DIR / 'index.html'
+    if not index_file.is_file():
+        raise HTTPException(500, 'index.html tidak ditemukan di deployment.')
+    return FileResponse(index_file, media_type='text/html')
+
