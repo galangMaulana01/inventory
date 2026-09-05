@@ -1,39 +1,57 @@
 from fastapi import FastAPI, HTTPException, UploadFile, Form, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel
-from typing import Optional, List
-from datetime import datetime, timedelta
+from pydantic import BaseModel, Field
+from typing import Optional, List, Any
+from datetime import datetime, timezone
+from pathlib import Path
 import os
 import json
-from io import BytesIO
-import base64
 import hashlib
-from pathlib import Path
+import time
+import secrets
 
-# ===== DATABASE SETUP =====
 try:
     from pymongo import MongoClient
     from pymongo.errors import DuplicateKeyError
-    MONGO_URI = os.getenv("MONGODB_URI", "mongodb://localhost:27017/stokku")
-    mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-    db = mongo_client.get_database()
-    USE_MONGO = True
-except Exception as e:
-    print(f"⚠️ MongoDB tidak tersedia ({e}), fallback ke local JSON storage")
-    USE_MONGO = False
-    DATA_DIR = Path("/tmp/stokku_data")
-    DATA_DIR.mkdir(exist_ok=True)
-    db = None
+    from bson import ObjectId
+except Exception:
+    MongoClient = None
+    DuplicateKeyError = Exception
+    ObjectId = None
 
-# ===== CLOUDINARY SETUP =====
+# ============================================================
+# CONFIG
+# ============================================================
+MONGO_URI = os.getenv("MONGODB_URI")
 CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
 CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
-USE_CLOUDINARY = bool(CLOUDINARY_CLOUD_NAME and CLOUDINARY_API_KEY and CLOUDINARY_API_SECRET)
+USE_CLOUDINARY = all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET])
 
-# ===== APP SETUP =====
-app = FastAPI()
+DATA_DIR = Path(os.getenv("STOKKU_DATA_DIR", "/tmp/stokku_data"))
+UPLOAD_DIR = Path(os.getenv("STOKKU_UPLOAD_DIR", "/tmp/stokku_uploads"))
+
+mongo_client = None
+db = None
+USE_MONGO = False
+
+if MONGO_URI and MongoClient:
+    try:
+        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
+        db = mongo_client.get_default_database()
+        mongo_client.admin.command("ping")
+        USE_MONGO = True
+    except Exception as exc:
+        print(f"MongoDB unavailable: {exc}")
+        USE_MONGO = False
+        db = None
+
+if not USE_MONGO:
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+
+app = FastAPI(title="Stokku Inventory API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -42,187 +60,287 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# ===== MODELS =====
+# ============================================================
+# MODELS
+# ============================================================
 class SizeInput(BaseModel):
-    size: str
-    warehouse_qty: int
-    hpp: int
-    normal_price: int
-    minimum_price: int
+    size: str = Field(min_length=1)
+    warehouse_qty: int = Field(ge=0)
+    hpp: int = Field(ge=0)
+    normal_price: int = Field(ge=0)
+    minimum_price: int = Field(ge=0)
 
 class ColorInput(BaseModel):
-    color: str
-    color_hex: str
-    sizes: List[SizeInput]
+    color: str = Field(min_length=1)
+    color_hex: Optional[str] = "#cccccc"
+    sizes: List[SizeInput] = Field(min_length=1)
 
 class ProductInput(BaseModel):
-    name: str
-    model: str
-    colors: List[ColorInput]
+    name: str = Field(min_length=1)
+    model: str = Field(min_length=1)
+    colors: List[ColorInput] = Field(min_length=1)
 
 class VariantInput(BaseModel):
     product_id: str
-    color: str
+    color: str = Field(min_length=1)
     color_hex: Optional[str] = None
-    size: str
-    warehouse_qty: int
-    hpp: int
-    normal_price: int
-    minimum_price: int
+    size: str = Field(min_length=1)
+    warehouse_qty: int = Field(ge=0)
+    hpp: int = Field(ge=0)
+    normal_price: int = Field(ge=0)
+    minimum_price: int = Field(ge=0)
+
+class VariantUpdate(BaseModel):
+    product_id: Optional[str] = None
+    color: Optional[str] = None
+    color_hex: Optional[str] = None
+    size: Optional[str] = None
+    warehouse_qty: Optional[int] = Field(default=None, ge=0)
+    hpp: Optional[int] = Field(default=None, ge=0)
+    normal_price: Optional[int] = Field(default=None, ge=0)
+    minimum_price: Optional[int] = Field(default=None, ge=0)
 
 class TransactionInput(BaseModel):
     variant_id: str
-    qty: int
-    unit_price: int
-    payment_method: Optional[str] = "cash"  # bank, wallet, cash
+    qty: int = Field(gt=0)
+    unit_price: int = Field(gt=0)
+    payment_method: Optional[str] = "cash"
+
+class BatchItem(BaseModel):
+    variant_id: str
+    qty: int = Field(gt=0)
+    unit_price: int = Field(gt=0)
+
+class BatchTransactionInput(BaseModel):
+    items: List[BatchItem] = Field(min_length=1)
+    payment_method: Optional[str] = "cash"
 
 class TransferInput(BaseModel):
     variant_id: str
-    qty: int
+    qty: int = Field(gt=0)
 
-# ===== UPLOAD HANDLER =====
-async def upload_image_to_cloudinary(file_content: bytes, filename: str) -> str:
-    """Upload ke Cloudinary atau local fallback"""
-    if USE_CLOUDINARY:
-        import requests
-        url = f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload"
-        files = {"file": (filename, file_content)}
-        data = {"upload_preset": os.getenv("CLOUDINARY_UPLOAD_PRESET", "stokku")}
-        auth = (CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET)
-        try:
-            resp = requests.post(url, files=files, data=data, auth=auth, timeout=10)
-            if resp.status_code == 200:
-                return resp.json()["secure_url"]
-        except Exception as e:
-            print(f"Cloudinary error: {e}, fallback ke local")
-    
-    # Fallback: simpan local dan return placeholder
-    file_hash = hashlib.md5(file_content).hexdigest()
-    upload_dir = Path("/tmp/stokku_uploads")
-    upload_dir.mkdir(exist_ok=True)
-    file_path = upload_dir / f"{file_hash}.png"
-    file_path.write_bytes(file_content)
-    return f"/uploads/{file_hash}.png"
+# ============================================================
+# SERIALIZATION / HELPERS
+# ============================================================
+def normalize_color(value: str) -> str:
+    return str(value or "").strip().lower()
 
-# ===== JSON DATA HELPERS (Fallback) =====
-def load_json(key: str, default=None):
-    if USE_MONGO:
+def now_utc() -> datetime:
+    return datetime.now(timezone.utc)
+
+def parse_datetime(value: Any) -> Optional[datetime]:
+    if isinstance(value, datetime):
+        return value
+    if not value:
         return None
-    path = DATA_DIR / f"{key}.json"
-    if path.exists():
-        with open(path) as f:
-            return json.load(f)
-    return default or {}
-
-def save_json(key: str, data):
-    if USE_MONGO:
-        return
-    path = DATA_DIR / f"{key}.json"
-    with open(path, "w") as f:
-        json.dump(data, f, indent=2, default=str)
-
-# ===== MONGODB HELPERS =====
-def init_db():
-    if not USE_MONGO:
-        return
     try:
-        # Create collections dengan index
-        products = db["products"]
-        products.create_index("_id", unique=True)
-        
-        variants = db["variants"]
-        variants.create_index([("product_id", 1), ("color_lower", 1), ("size", 1)], unique=True)
-        
-        transactions = db["transactions"]
-        transactions.create_index("created_at")
-        
-        stock_moves = db["stock_moves"]
-        colors = db["colors"]
-        
-        print("✅ MongoDB initialized")
-    except Exception as e:
-        print(f"⚠️ MongoDB init error: {e}")
+        text = str(value).replace("Z", "+00:00")
+        return datetime.fromisoformat(text)
+    except Exception:
+        return None
 
-init_db()
+def json_safe(value: Any) -> Any:
+    """Recursively remove Mongo ObjectId/datetime so FastAPI can serialize safely."""
+    if ObjectId is not None and isinstance(value, ObjectId):
+        return str(value)
+    if isinstance(value, datetime):
+        if value.tzinfo is None:
+            value = value.replace(tzinfo=timezone.utc)
+        return value.isoformat()
+    if isinstance(value, dict):
+        return {str(k): json_safe(v) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [json_safe(v) for v in value]
+    return value
 
-# ===== HELPER FUNCTIONS =====
-def normalize_color(color: str) -> str:
-    """Normalize warna ke lowercase"""
-    return color.strip().lower()
+def oid(value: str):
+    if ObjectId is None or not ObjectId.is_valid(str(value)):
+        raise HTTPException(status_code=400, detail="ID tidak valid")
+    return ObjectId(str(value))
+
+def load_json(name: str, default):
+    path = DATA_DIR / f"{name}.json"
+    if not path.exists():
+        return default
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return json.load(f)
+    except Exception:
+        return default
+
+def save_json(name: str, data):
+    DATA_DIR.mkdir(parents=True, exist_ok=True)
+    path = DATA_DIR / f"{name}.json"
+    with path.open("w", encoding="utf-8") as f:
+        json.dump(data, f, indent=2, ensure_ascii=False, default=json_safe)
 
 def get_products():
     if USE_MONGO:
-        return list(db["products"].find({"deleted": {"$ne": True}}))
-    return load_json("products", {}).get("items", [])
+        return list(db.products.find({"deleted": {"$ne": True}}))
+    return load_json("products", {"items": []}).get("items", [])
 
 def get_variants():
     if USE_MONGO:
-        return list(db["variants"].find({"deleted": {"$ne": True}}))
-    return load_json("variants", {}).get("items", [])
+        return list(db.variants.find({"deleted": {"$ne": True}}))
+    return load_json("variants", {"items": []}).get("items", [])
 
 def get_colors():
     if USE_MONGO:
-        return list(db["colors"].find({"deleted": {"$ne": True}}))
-    return load_json("colors", {}).get("items", [])
+        return list(db.colors.find({"deleted": {"$ne": True}}))
+    return load_json("colors", {"items": []}).get("items", [])
 
 def get_transactions():
     if USE_MONGO:
-        return list(db["transactions"].find().sort("created_at", -1).limit(100))
-    return load_json("transactions", {}).get("items", [])
+        return list(db.transactions.find().sort("created_at", -1).limit(200))
+    return load_json("transactions", {"items": []}).get("items", [])
 
-def add_stock_move(variant_id: str, from_type: str, to_type: str, qty: int, notes: str = ""):
+def product_map():
+    return {str(p.get("_id", p.get("id"))): p for p in get_products()}
+
+def enrich_variants(variants):
+    products = product_map()
+    colors = {str(c.get("_id", c.get("id"))): c for c in get_colors()}
+    result = []
+    for v in variants:
+        item = dict(v)
+        product_id = str(v.get("product_id", ""))
+        color_id = str(v.get("color_id", ""))
+        p = products.get(product_id, {})
+        c = colors.get(color_id, {})
+        item["id"] = str(v.get("_id", v.get("id", "")))
+        item["product_id"] = product_id
+        item["color_id"] = color_id
+        item["product_name"] = v.get("product_name") or p.get("name", "")
+        item["model"] = v.get("model") or p.get("model", "")
+        item["image_url"] = v.get("image_url") or p.get("image_url")
+        item["color"] = v.get("color") or c.get("color", "")
+        item["color_hex"] = v.get("color_hex") or c.get("color_hex") or "#cccccc"
+        item["size"] = str(v.get("size", ""))
+        item["warehouse_qty"] = int(v.get("warehouse_qty", 0) or 0)
+        item["sale_qty"] = int(v.get("sale_qty", 0) or 0)
+        item["hpp"] = int(v.get("hpp", 0) or 0)
+        item["normal_price"] = int(v.get("normal_price", 0) or 0)
+        item["minimum_price"] = int(v.get("minimum_price", 0) or 0)
+        result.append(item)
+    return json_safe(result)
+
+def find_variant(variant_id: str):
     if USE_MONGO:
-        db["stock_moves"].insert_one({
-            "variant_id": variant_id,
-            "from_type": from_type,
-            "to_type": to_type,
-            "qty": qty,
-            "notes": notes,
-            "created_at": datetime.utcnow()
-        })
+        return db.variants.find_one({"_id": oid(variant_id), "deleted": {"$ne": True}})
+    return next((v for v in get_variants() if str(v.get("_id", v.get("id"))) == str(variant_id)), None)
+
+def invoice_no():
+    return f"INV-{now_utc().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2).upper()}"
+
+def validate_price(variant, unit_price):
+    minimum = int(variant.get("minimum_price", 0))
+    normal = int(variant.get("normal_price", 0))
+    if minimum > normal:
+        raise HTTPException(status_code=500, detail="Konfigurasi harga varian tidak valid")
+    if not minimum <= unit_price <= normal:
+        raise HTTPException(status_code=400, detail=f"Harga harus antara {minimum} - {normal}")
+
+def add_stock_move(variant_id, from_type, to_type, qty, notes=""):
+    doc = {
+        "variant_id": oid(variant_id) if USE_MONGO else str(variant_id),
+        "from_type": from_type,
+        "to_type": to_type,
+        "qty": int(qty),
+        "notes": notes,
+        "created_at": now_utc(),
+    }
+    if USE_MONGO:
+        db.stock_moves.insert_one(doc)
     else:
-        moves = load_json("stock_moves", {})
-        if "items" not in moves:
-            moves["items"] = []
-        moves["items"].append({
-            "variant_id": variant_id,
-            "from_type": from_type,
-            "to_type": to_type,
-            "qty": qty,
-            "notes": notes,
-            "created_at": datetime.utcnow().isoformat()
-        })
-        save_json("stock_moves", moves)
+        data = load_json("stock_moves", {"items": []})
+        data["items"].append(json_safe(doc))
+        save_json("stock_moves", data)
 
-# ===== API ENDPOINTS =====
+# ============================================================
+# DB INDEXES
+# ============================================================
+if USE_MONGO:
+    try:
+        db.variants.create_index(
+            [("product_id", 1), ("color_lower", 1), ("size", 1)],
+            unique=True,
+            name="variant_product_color_size_unique",
+        )
+        db.transactions.create_index([("created_at", -1)], name="transactions_created_at")
+        db.colors.create_index([("product_id", 1), ("color_lower", 1)], name="color_product_lower")
+        db.stock_moves.create_index([("created_at", -1)], name="stock_moves_created_at")
+    except Exception as exc:
+        print(f"Index warning: {exc}")
 
+# ============================================================
+# HEALTH / DASHBOARD
+# ============================================================
 @app.get("/api/health")
 async def health():
     return {
         "status": "ok",
-        "database": "mongodb" if USE_MONGO else "json",
-        "cloudinary": "enabled" if USE_CLOUDINARY else "disabled (local fallback)"
+        "database": "mongodb" if USE_MONGO else "json-fallback",
+        "cloudinary": "enabled" if USE_CLOUDINARY else "disabled",
     }
 
 @app.get("/api/dashboard")
-async def get_dashboard():
-    """Dashboard dengan metrics"""
+async def dashboard():
     products = get_products()
     variants = get_variants()
     transactions = get_transactions()
-    
-    today = datetime.utcnow().date()
-    today_trans = [t for t in transactions if datetime.fromisoformat(t.get("created_at", "")).date() == today]
-    
-    warehouse_qty = sum(v.get("warehouse_qty", 0) for v in variants)
-    sale_qty = sum(v.get("sale_qty", 0) for v in variants)
-    sold_qty = sum(t.get("qty", 0) for t in today_trans)
-    
-    revenue = sum(t.get("qty", 0) * t.get("unit_price", 0) for t in today_trans)
-    hpp_cost = sum(t.get("qty", 0) * next((v.get("hpp", 0) for v in variants if str(v.get("_id")) == str(t.get("variant_id"))), 0) for t in today_trans)
-    profit = revenue - hpp_cost
-    
-    return {
+    today = now_utc().date()
+
+    today_trans = []
+    for t in transactions:
+        dt = parse_datetime(t.get("created_at"))
+        if dt and dt.date() == today:
+            today_trans.append(t)
+
+    warehouse_qty = sum(int(v.get("warehouse_qty", 0) or 0) for v in variants)
+    sale_qty = sum(int(v.get("sale_qty", 0) or 0) for v in variants)
+    sold_qty = sum(int(t.get("qty", 0) or 0) for t in today_trans)
+    revenue = sum(int(t.get("qty", 0) or 0) * int(t.get("unit_price", 0) or 0) for t in today_trans)
+    capital = sum(int(v.get("hpp", 0) or 0) * int(v.get("warehouse_qty", 0) or 0) for v in variants)
+
+    hpp_by_variant = {str(v.get("_id", v.get("id"))): int(v.get("hpp", 0) or 0) for v in variants}
+    profit = sum(
+        int(t.get("qty", 0) or 0)
+        * (int(t.get("unit_price", 0) or 0) - hpp_by_variant.get(str(t.get("variant_id")), int(t.get("hpp", 0) or 0)))
+        for t in today_trans
+    )
+
+    enriched_transactions = []
+    products_by_id = product_map()
+    for t in transactions:
+        item = dict(t)
+        item["id"] = str(t.get("_id", t.get("id", "")))
+        item["variant_id"] = str(t.get("variant_id", ""))
+        p = products_by_id.get(str(t.get("product_id")), {})
+        item["product_name"] = t.get("product_name") or p.get("name", "")
+        item["model"] = t.get("model") or p.get("model", "")
+        item["image_url"] = t.get("image_url") or p.get("image_url")
+        item["total"] = int(t.get("total_price", t.get("total", 0)) or 0)
+        enriched_transactions.append(item)
+
+    recent = enriched_transactions[:5]
+    product_sales = {}
+    for t in today_trans:
+        pid = str(t.get("product_id", ""))
+        entry = product_sales.setdefault(pid, {"product_id": pid, "sold_qty": 0, "revenue": 0})
+        entry["sold_qty"] += int(t.get("qty", 0) or 0)
+        entry["revenue"] += int(t.get("qty", 0) or 0) * int(t.get("unit_price", 0) or 0)
+
+    top = []
+    for entry in sorted(product_sales.values(), key=lambda x: (-x["sold_qty"], -x["revenue"])):
+        p = products_by_id.get(entry["product_id"], {})
+        top.append({
+            **entry,
+            "product_name": p.get("name", ""),
+            "model": p.get("model", ""),
+            "image_url": p.get("image_url"),
+        })
+
+    return json_safe({
         "total_products": len(products),
         "total_variants": len(variants),
         "warehouse_qty": warehouse_qty,
@@ -231,436 +349,537 @@ async def get_dashboard():
         "revenue_today": revenue,
         "profit_today": profit,
         "transactions_today": len(today_trans),
-        "total_capital": sum(v.get("hpp", 0) * v.get("warehouse_qty", 0) for v in variants)
-    }
+        "transaction_count_today": len(today_trans),
+        "total_capital": capital,
+        "capital": capital,
+        "recent_transactions": recent,
+        "top_products": top,
+    })
+
+# ============================================================
+# PRODUCTS
+# ============================================================
+@app.get("/api/products")
+async def list_products():
+    return json_safe([
+        {
+            "_id": str(p.get("_id", p.get("id"))),
+            "id": str(p.get("_id", p.get("id"))),
+            "name": p.get("name", ""),
+            "model": p.get("model", ""),
+            "image_url": p.get("image_url"),
+        }
+        for p in get_products()
+    ])
 
 @app.post("/api/products")
 async def create_product(product: ProductInput):
-    """Buat produk baru dengan warna dan size"""
+    for color in product.colors:
+        if any(s.minimum_price > s.normal_price for s in color.sizes):
+            raise HTTPException(status_code=400, detail=f"Harga minimum warna {color.color} melebihi harga normal")
+        if len({normalize_color(s.size) for s in color.sizes}) != len(color.sizes):
+            raise HTTPException(status_code=400, detail=f"Duplikat size pada warna {color.color}")
+    if len({normalize_color(c.color) for c in product.colors}) != len(product.colors):
+        raise HTTPException(status_code=400, detail="Duplikat warna dalam produk")
+
+    created = now_utc()
+
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        
-        # Buat produk
         product_doc = {
             "_id": ObjectId(),
-            "name": product.name,
-            "model": product.model,
+            "name": product.name.strip(),
+            "model": product.model.strip(),
             "image_url": None,
-            "created_at": datetime.utcnow(),
-            "deleted": False
+            "created_at": created,
+            "deleted": False,
         }
-        db["products"].insert_one(product_doc)
-        
-        # Buat warna dan varian
-        for color_input in product.colors:
-            color_norm = normalize_color(color_input.color)
-            
-            # Cek duplicate warna dalam produk ini
-            existing_color = db["colors"].find_one({
-                "product_id": product_doc["_id"],
-                "color_lower": color_norm,
-                "deleted": {"$ne": True}
-            })
-            
-            if not existing_color:
+        db.products.insert_one(product_doc)
+        try:
+            for color in product.colors:
                 color_doc = {
                     "_id": ObjectId(),
                     "product_id": product_doc["_id"],
-                    "color": color_input.color,
-                    "color_lower": color_norm,
-                    "color_hex": color_input.color_hex or "#cccccc",
-                    "created_at": datetime.utcnow(),
-                    "deleted": False
+                    "color": color.color.strip(),
+                    "color_lower": normalize_color(color.color),
+                    "color_hex": color.color_hex or "#cccccc",
+                    "created_at": created,
+                    "deleted": False,
                 }
-                db["colors"].insert_one(color_doc)
-            else:
-                color_doc = existing_color
-            
-            # Buat varian untuk setiap size
-            for size_input in color_input.sizes:
-                try:
-                    variant_doc = {
+                db.colors.insert_one(color_doc)
+                for size in color.sizes:
+                    db.variants.insert_one({
                         "_id": ObjectId(),
                         "product_id": product_doc["_id"],
                         "color_id": color_doc["_id"],
-                        "color": color_doc["color"],
-                        "color_lower": color_norm,
-                        "color_hex": color_doc["color_hex"],
-                        "size": size_input.size.strip(),
-                        "warehouse_qty": size_input.warehouse_qty,
+                        "color": color.color.strip(),
+                        "color_lower": normalize_color(color.color),
+                        "color_hex": color.color_hex or "#cccccc",
+                        "size": size.size.strip(),
+                        "warehouse_qty": size.warehouse_qty,
                         "sale_qty": 0,
-                        "hpp": size_input.hpp,
-                        "normal_price": size_input.normal_price,
-                        "minimum_price": size_input.minimum_price,
-                        "created_at": datetime.utcnow(),
-                        "deleted": False
-                    }
-                    db["variants"].insert_one(variant_doc)
-                except DuplicateKeyError:
-                    raise HTTPException(status_code=400, detail=f"Duplikat warna+size: {color_input.color} {size_input.size}")
-        
-        return {"id": str(product_doc["_id"]), "name": product.name, "model": product.model}
-    else:
-        products_data = load_json("products", {})
-        if "items" not in products_data:
-            products_data["items"] = []
-        
-        product_id = str(len(products_data["items"]) + 1)
-        product_doc = {
-            "id": product_id,
-            "name": product.name,
-            "model": product.model,
-            "image_url": None,
-            "created_at": datetime.utcnow().isoformat(),
-            "deleted": False
-        }
-        products_data["items"].append(product_doc)
-        save_json("products", products_data)
-        
-        # Similar untuk warna & varian... (simplified untuk brevity)
-        return {"id": product_id, "name": product.name, "model": product.model}
+                        "hpp": size.hpp,
+                        "normal_price": size.normal_price,
+                        "minimum_price": size.minimum_price,
+                        "created_at": created,
+                        "deleted": False,
+                    })
+        except DuplicateKeyError:
+            db.products.delete_one({"_id": product_doc["_id"]})
+            db.colors.delete_many({"product_id": product_doc["_id"]})
+            db.variants.delete_many({"product_id": product_doc["_id"]})
+            raise HTTPException(status_code=400, detail="Kombinasi warna + size duplikat")
+        return {"id": str(product_doc["_id"]), "message": "Produk berhasil dibuat"}
 
-@app.get("/api/products")
-async def list_products():
-    """List semua produk (tidak deleted)"""
-    products = get_products()
-    return [{"_id": str(p.get("_id", p.get("id"))), "name": p["name"], "model": p["model"], "image_url": p.get("image_url")} for p in products]
+    products = load_json("products", {"items": []})
+    variants = load_json("variants", {"items": []})
+    colors = load_json("colors", {"items": []})
+    product_id = secrets.token_hex(12)
+    pdoc = {"id": product_id, "name": product.name.strip(), "model": product.model.strip(), "image_url": None, "created_at": created.isoformat(), "deleted": False}
+    products["items"].append(pdoc)
+    for color in product.colors:
+        color_id = secrets.token_hex(12)
+        cdoc = {"id": color_id, "product_id": product_id, "color": color.color.strip(), "color_lower": normalize_color(color.color), "color_hex": color.color_hex or "#cccccc", "created_at": created.isoformat(), "deleted": False}
+        colors["items"].append(cdoc)
+        for size in color.sizes:
+            variants["items"].append({"id": secrets.token_hex(12), "product_id": product_id, "color_id": color_id, "color": color.color.strip(), "color_lower": normalize_color(color.color), "color_hex": color.color_hex or "#cccccc", "size": size.size.strip(), "warehouse_qty": size.warehouse_qty, "sale_qty": 0, "hpp": size.hpp, "normal_price": size.normal_price, "minimum_price": size.minimum_price, "created_at": created.isoformat(), "deleted": False})
+    save_json("products", products)
+    save_json("colors", colors)
+    save_json("variants", variants)
+    return {"id": product_id, "message": "Produk berhasil dibuat"}
 
 @app.get("/api/products/{product_id}")
 async def get_product(product_id: str):
-    """Detail produk dengan varian"""
-    if USE_MONGO:
-        from bson.objectid import ObjectId
-        try:
-            product = db["products"].find_one({"_id": ObjectId(product_id), "deleted": {"$ne": True}})
-        except:
-            product = None
-    else:
-        products = get_products()
-        product = next((p for p in products if str(p.get("_id", p.get("id"))) == product_id), None)
-    
+    products = product_map()
+    product = products.get(product_id)
     if not product:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-    
-    variants = get_variants()
-    product_variants = [v for v in variants if str(v.get("product_id")) == product_id]
-    
-    return {
-        "_id": str(product.get("_id", product.get("id"))),
-        "name": product["name"],
-        "model": product["model"],
+    variants = [v for v in get_variants() if str(v.get("product_id")) == product_id]
+    return json_safe({
+        "id": product_id,
+        "_id": product_id,
+        "name": product.get("name", ""),
+        "model": product.get("model", ""),
         "image_url": product.get("image_url"),
-        "variants": product_variants
-    }
+        "variants": enrich_variants(variants),
+    })
 
 @app.put("/api/products/{product_id}")
 async def update_product(product_id: str, name: str = Form(...), model: str = Form(...)):
-    """Update info produk (nama, seri)"""
+    if not str(name).strip() or not str(model).strip():
+        raise HTTPException(status_code=400, detail="Nama dan seri wajib diisi")
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        try:
-            result = db["products"].update_one(
-                {"_id": ObjectId(product_id), "deleted": {"$ne": True}},
-                {"$set": {"name": name, "model": model}}
-            )
-            if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    
+        result = db.products.update_one({"_id": oid(product_id), "deleted": {"$ne": True}}, {"$set": {"name": name.strip(), "model": model.strip()}})
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+    else:
+        data = load_json("products", {"items": []})
+        found = next((p for p in data["items"] if str(p.get("id")) == product_id and not p.get("deleted")), None)
+        if not found:
+            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+        found.update({"name": name.strip(), "model": model.strip()})
+        save_json("products", data)
     return {"message": "Produk diperbarui"}
 
 @app.delete("/api/products/{product_id}")
 async def delete_product(product_id: str):
-    """Soft-delete produk (tandai sebagai deleted)"""
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        try:
-            # Soft delete produk
-            result = db["products"].update_one(
-                {"_id": ObjectId(product_id)},
-                {"$set": {"deleted": True}}
-            )
-            if result.matched_count == 0:
-                raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-            
-            # Soft delete semua varian produk ini
-            db["variants"].update_many(
-                {"product_id": ObjectId(product_id)},
-                {"$set": {"deleted": True}}
-            )
-            
-            # Soft delete semua warna produk ini
-            db["colors"].update_many(
-                {"product_id": ObjectId(product_id)},
-                {"$set": {"deleted": True}}
-            )
-        except Exception as e:
-            raise HTTPException(status_code=400, detail=str(e))
-    
-    return {"message": f"Produk {product_id} dihapus"}
+        result = db.products.update_one({"_id": oid(product_id)}, {"$set": {"deleted": True}})
+        if result.matched_count == 0:
+            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+        db.variants.update_many({"product_id": oid(product_id)}, {"$set": {"deleted": True}})
+        db.colors.update_many({"product_id": oid(product_id)}, {"$set": {"deleted": True}})
+    else:
+        products = load_json("products", {"items": []})
+        found = next((p for p in products["items"] if str(p.get("id")) == product_id), None)
+        if not found:
+            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+        found["deleted"] = True
+        for name in ("variants", "colors"):
+            data = load_json(name, {"items": []})
+            for item in data["items"]:
+                if str(item.get("product_id")) == product_id:
+                    item["deleted"] = True
+            save_json(name, data)
+        save_json("products", products)
+    return {"message": "Produk dihapus"}
+
+# ============================================================
+# IMAGE
+# ============================================================
+async def upload_image_to_cloudinary(content: bytes, filename: str) -> str:
+    if not USE_CLOUDINARY:
+        digest = hashlib.sha256(content).hexdigest()[:32]
+        path = UPLOAD_DIR / f"{digest}.bin"
+        path.write_bytes(content)
+        return f"/uploads/{path.name}"
+
+    import requests
+    import hashlib as _hashlib
+    timestamp = int(time.time())
+    signature_base = f"timestamp={timestamp}{CLOUDINARY_API_SECRET}"
+    signature = _hashlib.sha1(signature_base.encode("utf-8")).hexdigest()
+    url = f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload"
+    files = {"file": (filename, content)}
+    data = {"api_key": CLOUDINARY_API_KEY, "timestamp": timestamp, "signature": signature}
+    response = requests.post(url, files=files, data=data, timeout=30)
+    if response.status_code != 200:
+        raise HTTPException(status_code=502, detail="Upload gambar ke Cloudinary gagal")
+    return response.json()["secure_url"]
 
 @app.post("/api/products/{product_id}/image")
 async def upload_product_image(product_id: str, image: UploadFile):
-    """Upload gambar produk ke Cloudinary"""
-    if image.content_type not in ["image/jpeg", "image/png", "image/webp"]:
+    if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
         raise HTTPException(status_code=400, detail="Format harus JPEG/PNG/WebP")
-    
     content = await image.read()
-    if len(content) > 5 * 1024 * 1024:  # 5MB
+    if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Ukuran maksimal 5MB")
-    
-    image_url = await upload_image_to_cloudinary(content, f"{product_id}_{image.filename}")
-    
-    if USE_MONGO:
-        from bson.objectid import ObjectId
-        db["products"].update_one(
-            {"_id": ObjectId(product_id)},
-            {"$set": {"image_url": image_url}}
-        )
-    
-    return {"image_url": image_url, "message": "Gambar utama produk berhasil disimpan"}
 
+    if not find_product(product_id):
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+
+    url = await upload_image_to_cloudinary(content, image.filename or "product.jpg")
+    if USE_MONGO:
+        db.products.update_one({"_id": oid(product_id)}, {"$set": {"image_url": url}})
+    else:
+        data = load_json("products", {"items": []})
+        found = next((p for p in data["items"] if str(p.get("id")) == product_id), None)
+        if found:
+            found["image_url"] = url
+            save_json("products", data)
+    return {"image_url": url, "message": "Gambar utama produk berhasil disimpan"}
+
+def find_product(product_id: str):
+    if USE_MONGO:
+        return db.products.find_one({"_id": oid(product_id), "deleted": {"$ne": True}})
+    return next((p for p in get_products() if str(p.get("id")) == product_id), None)
+
+@app.get("/uploads/{filename}")
+async def serve_upload(filename: str):
+    safe_name = Path(filename).name
+    path = UPLOAD_DIR / safe_name
+    if path.exists():
+        return FileResponse(path)
+    raise HTTPException(status_code=404, detail="File tidak ditemukan")
+
+# ============================================================
+# VARIANTS / STOCK
+# ============================================================
 @app.get("/api/variants")
 async def list_variants(product_id: Optional[str] = Query(None)):
-    """List varian dengan grouping per produk & warna"""
     variants = get_variants()
-    
     if product_id:
         variants = [v for v in variants if str(v.get("product_id")) == product_id]
-    
-    return variants
+    return enrich_variants(variants)
 
 @app.post("/api/variants")
 async def create_variant(variant: VariantInput):
-    """Tambah varian (warna+size) ke produk"""
+    if variant.minimum_price > variant.normal_price:
+        raise HTTPException(status_code=400, detail="Harga minimum tidak boleh melebihi harga normal")
+    product = find_product(variant.product_id)
+    if not product:
+        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+
+    color_norm = normalize_color(variant.color)
+    size = variant.size.strip()
+
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        
-        color_norm = normalize_color(variant.color)
-        
-        # Cek duplikat
-        existing = db["variants"].find_one({
-            "product_id": ObjectId(variant.product_id),
+        existing = db.variants.find_one({
+            "product_id": oid(variant.product_id),
             "color_lower": color_norm,
-            "size": variant.size.strip(),
-            "deleted": {"$ne": True}
+            "size": size,
+            "deleted": {"$ne": True},
         })
-        
         if existing:
-            raise HTTPException(status_code=400, detail=f"Duplikat: {variant.color} size {variant.size} sudah ada di produk ini")
-        
-        # Get/create color
-        color = db["colors"].find_one({
-            "product_id": ObjectId(variant.product_id),
-            "color_lower": color_norm,
-            "deleted": {"$ne": True}
-        })
-        
+            raise HTTPException(status_code=400, detail=f"Duplikat: {variant.color} size {size} sudah ada")
+        color = db.colors.find_one({"product_id": oid(variant.product_id), "color_lower": color_norm, "deleted": {"$ne": True}})
         if not color:
-            color_doc = {
-                "_id": ObjectId(),
-                "product_id": ObjectId(variant.product_id),
-                "color": variant.color,
-                "color_lower": color_norm,
-                "color_hex": variant.color_hex or "#cccccc",
-                "created_at": datetime.utcnow(),
-                "deleted": False
-            }
-            db["colors"].insert_one(color_doc)
-            color = color_doc
-        
-        # Create variant
-        variant_doc = {
+            color = {"_id": ObjectId(), "product_id": oid(variant.product_id), "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}
+            db.colors.insert_one(color)
+        doc = {
             "_id": ObjectId(),
-            "product_id": ObjectId(variant.product_id),
+            "product_id": oid(variant.product_id),
             "color_id": color["_id"],
             "color": color["color"],
             "color_lower": color_norm,
-            "color_hex": color.get("color_hex", "#cccccc"),
-            "size": variant.size.strip(),
+            "color_hex": color.get("color_hex") or "#cccccc",
+            "size": size,
             "warehouse_qty": variant.warehouse_qty,
             "sale_qty": 0,
             "hpp": variant.hpp,
             "normal_price": variant.normal_price,
             "minimum_price": variant.minimum_price,
-            "created_at": datetime.utcnow(),
-            "deleted": False
+            "created_at": now_utc(),
+            "deleted": False,
         }
-        db["variants"].insert_one(variant_doc)
-        
-        return {"id": str(variant_doc["_id"]), "message": "Varian berhasil ditambahkan"}
-    else:
-        raise HTTPException(status_code=500, detail="JSON mode tidak support create variant, gunakan MongoDB")
+        try:
+            db.variants.insert_one(doc)
+        except DuplicateKeyError:
+            raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
+        return {"id": str(doc["_id"]), "message": "Varian berhasil ditambahkan"}
+    data = load_json("variants", {"items": []})
+    for v in data["items"]:
+        if str(v.get("product_id")) == variant.product_id and normalize_color(v.get("color")) == color_norm and str(v.get("size")).strip().lower() == size.lower() and not v.get("deleted"):
+            raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
+    color_data = load_json("colors", {"items": []})
+    color = next((c for c in color_data["items"] if str(c.get("product_id")) == variant.product_id and normalize_color(c.get("color")) == color_norm and not c.get("deleted")), None)
+    if not color:
+        color = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc().isoformat(), "deleted": False}
+        color_data["items"].append(color)
+        save_json("colors", color_data)
+    doc = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color_id": color["id"], "color": color["color"], "color_lower": color_norm, "color_hex": color["color_hex"], "size": size, "warehouse_qty": variant.warehouse_qty, "sale_qty": 0, "hpp": variant.hpp, "normal_price": variant.normal_price, "minimum_price": variant.minimum_price, "created_at": now_utc().isoformat(), "deleted": False}
+    data["items"].append(doc)
+    save_json("variants", data)
+    return {"id": doc["id"], "message": "Varian berhasil ditambahkan"}
 
 @app.put("/api/variants/{variant_id}")
-async def update_variant(variant_id: str, hpp: int = None, normal_price: int = None, minimum_price: int = None):
-    """Update harga varian"""
+async def update_variant(variant_id: str, variant: VariantUpdate):
+    existing = find_variant(variant_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
+
+    update = {}
+    if variant.product_id is not None:
+        if not find_product(variant.product_id):
+            raise HTTPException(status_code=404, detail="Produk tujuan tidak ditemukan")
+        update["product_id"] = oid(variant.product_id) if USE_MONGO else variant.product_id
+    if variant.color is not None:
+        update["color"] = variant.color.strip()
+        update["color_lower"] = normalize_color(variant.color)
+    if variant.color_hex is not None:
+        update["color_hex"] = variant.color_hex
+    if variant.size is not None:
+        update["size"] = variant.size.strip()
+    for field in ("warehouse_qty", "hpp", "normal_price", "minimum_price"):
+        value = getattr(variant, field)
+        if value is not None:
+            update[field] = value
+
+    final_min = int(update.get("minimum_price", existing.get("minimum_price", 0)))
+    final_normal = int(update.get("normal_price", existing.get("normal_price", 0)))
+    if final_min > final_normal:
+        raise HTTPException(status_code=400, detail="Harga minimum tidak boleh melebihi harga normal")
+
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        update_data = {}
-        if hpp is not None:
-            update_data["hpp"] = hpp
-        if normal_price is not None:
-            update_data["normal_price"] = normal_price
-        if minimum_price is not None:
-            update_data["minimum_price"] = minimum_price
-        
-        if not update_data:
-            raise HTTPException(status_code=400, detail="Tidak ada field untuk diupdate")
-        
-        result = db["variants"].update_one(
-            {"_id": ObjectId(variant_id)},
-            {"$set": update_data}
-        )
-        
-        if result.matched_count == 0:
+        if "product_id" in update:
+            # Existing color must be recreated/looked up if product changes.
+            color_name = str(update.get("color", existing.get("color", "")))
+            color_norm = normalize_color(color_name)
+            color = db.colors.find_one({"product_id": update["product_id"], "color_lower": color_norm, "deleted": {"$ne": True}})
+            if not color:
+                color = {"_id": ObjectId(), "product_id": update["product_id"], "color": color_name, "color_lower": color_norm, "color_hex": update.get("color_hex", existing.get("color_hex", "#cccccc")), "created_at": now_utc(), "deleted": False}
+                db.colors.insert_one(color)
+            update["color_id"] = color["_id"]
+        elif "color" in update:
+            color_norm = normalize_color(update["color"])
+            color = db.colors.find_one({"product_id": existing["product_id"], "color_lower": color_norm, "deleted": {"$ne": True}})
+            if color:
+                update["color_id"] = color["_id"]
+        try:
+            db.variants.update_one({"_id": oid(variant_id)}, {"$set": update})
+        except DuplicateKeyError:
+            raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
+    else:
+        data = load_json("variants", {"items": []})
+        found = next((v for v in data["items"] if str(v.get("id")) == variant_id and not v.get("deleted")), None)
+        if not found:
             raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-    
+        found.update(update)
+        save_json("variants", data)
     return {"message": "Varian diperbarui"}
 
 @app.delete("/api/variants/{variant_id}")
 async def delete_variant(variant_id: str):
-    """Soft-delete varian"""
+    existing = find_variant(variant_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        result = db["variants"].update_one(
-            {"_id": ObjectId(variant_id)},
-            {"$set": {"deleted": True}}
-        )
-        
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-    
+        db.variants.update_one({"_id": oid(variant_id)}, {"$set": {"deleted": True}})
+    else:
+        data = load_json("variants", {"items": []})
+        found = next(v for v in data["items"] if str(v.get("id")) == variant_id)
+        found["deleted"] = True
+        save_json("variants", data)
     return {"message": "Varian dihapus"}
 
+# ============================================================
+# TRANSFER
+# ============================================================
 @app.post("/api/transfers")
 async def transfer_stock(transfer: TransferInput):
-    """Pindahkan stok dari gudang ke stok jual"""
+    variant = find_variant(transfer.variant_id)
+    if not variant:
+        raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
+
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        
-        variant = db["variants"].find_one({"_id": ObjectId(transfer.variant_id)})
-        if not variant:
-            raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-        
-        if variant["warehouse_qty"] < transfer.qty:
-            raise HTTPException(status_code=400, detail=f"Stok gudang hanya {variant['warehouse_qty']} unit")
-        
-        # Update stok
-        db["variants"].update_one(
-            {"_id": ObjectId(transfer.variant_id)},
-            {
-                "$inc": {
-                    "warehouse_qty": -transfer.qty,
-                    "sale_qty": transfer.qty
-                }
-            }
+        result = db.variants.update_one(
+            {"_id": oid(transfer.variant_id), "deleted": {"$ne": True}, "warehouse_qty": {"$gte": transfer.qty}},
+            {"$inc": {"warehouse_qty": -transfer.qty, "sale_qty": transfer.qty}},
         )
-        
-        add_stock_move(transfer.variant_id, "warehouse", "sale", transfer.qty, "Transfer manual")
-    
+        if result.modified_count != 1:
+            raise HTTPException(status_code=400, detail="Stok gudang tidak mencukupi")
+    else:
+        data = load_json("variants", {"items": []})
+        found = next(v for v in data["items"] if str(v.get("id")) == transfer.variant_id and not v.get("deleted"))
+        if int(found.get("warehouse_qty", 0)) < transfer.qty:
+            raise HTTPException(status_code=400, detail=f"Stok gudang hanya {found.get('warehouse_qty', 0)} unit")
+        found["warehouse_qty"] = int(found.get("warehouse_qty", 0)) - transfer.qty
+        found["sale_qty"] = int(found.get("sale_qty", 0)) + transfer.qty
+        save_json("variants", data)
+
+    add_stock_move(transfer.variant_id, "warehouse", "sale", transfer.qty, "Transfer manual")
     return {"message": f"Stok berhasil dipindahkan ({transfer.qty} unit)"}
+
+# ============================================================
+# TRANSACTIONS
+# ============================================================
+def create_one_transaction(item: BatchItem, payment_method: str):
+    variant = find_variant(item.variant_id)
+    if not variant:
+        raise HTTPException(status_code=404, detail=f"Varian {item.variant_id} tidak ditemukan")
+    if int(variant.get("sale_qty", 0)) < item.qty:
+        raise HTTPException(status_code=400, detail=f"Stok jual hanya {variant.get('sale_qty', 0)} unit")
+    validate_price(variant, item.unit_price)
+
+    products = product_map()
+    product = products.get(str(variant.get("product_id")), {})
+    trans_id = ObjectId() if USE_MONGO else secrets.token_hex(12)
+    created = now_utc()
+    doc = {
+        "_id": trans_id if USE_MONGO else None,
+        "id": str(trans_id),
+        "invoice_no": invoice_no(),
+        "variant_id": oid(item.variant_id) if USE_MONGO else item.variant_id,
+        "product_id": variant.get("product_id"),
+        "color": variant.get("color", ""),
+        "size": variant.get("size", ""),
+        "qty": item.qty,
+        "unit_price": item.unit_price,
+        "total_price": item.qty * item.unit_price,
+        "total": item.qty * item.unit_price,
+        "hpp": int(variant.get("hpp", 0)),
+        "profit": item.qty * (item.unit_price - int(variant.get("hpp", 0))),
+        "payment_method": payment_method or "cash",
+        "product_name": product.get("name", ""),
+        "model": product.get("model", ""),
+        "image_url": product.get("image_url"),
+        "created_at": created,
+    }
+    if USE_MONGO:
+        result = db.variants.update_one(
+            {"_id": oid(item.variant_id), "deleted": {"$ne": True}, "sale_qty": {"$gte": item.qty}},
+            {"$inc": {"sale_qty": -item.qty}},
+        )
+        if result.modified_count != 1:
+            raise HTTPException(status_code=400, detail="Stok jual berubah atau tidak mencukupi")
+        db.transactions.insert_one(doc)
+    else:
+        data = load_json("variants", {"items": []})
+        found = next(v for v in data["items"] if str(v.get("id")) == item.variant_id and not v.get("deleted"))
+        found["sale_qty"] = int(found.get("sale_qty", 0)) - item.qty
+        save_json("variants", data)
+        doc["created_at"] = created.isoformat()
+        doc.pop("_id", None)
+        save_json("transactions", {"items": load_json("transactions", {"items": []}).get("items", []) + [json_safe(doc)]})
+    add_stock_move(item.variant_id, "sale", "sold", item.qty, f"Transaksi {doc['invoice_no']}")
+    return json_safe(doc)
 
 @app.post("/api/transactions")
 async def create_transaction(transaction: TransactionInput):
-    """Catat transaksi penjualan"""
-    if USE_MONGO:
-        from bson.objectid import ObjectId
-        
-        variant = db["variants"].find_one({"_id": ObjectId(transaction.variant_id)})
+    item = BatchItem(variant_id=transaction.variant_id, qty=transaction.qty, unit_price=transaction.unit_price)
+    doc = create_one_transaction(item, transaction.payment_method or "cash")
+    return {"id": doc["id"], "invoice_no": doc["invoice_no"], "message": "Transaksi berhasil dicatat", "profit": doc["profit"]}
+
+@app.post("/api/transactions/batch")
+async def create_batch_transaction(batch: BatchTransactionInput):
+    # Validate the whole cart first. This prevents a partial cart from being silently accepted.
+    if len(batch.items) > 100:
+        raise HTTPException(status_code=400, detail="Maksimal 100 item per transaksi")
+    seen = set()
+    for item in batch.items:
+        key = (item.variant_id, item.unit_price)
+        if key in seen:
+            raise HTTPException(status_code=400, detail="Item duplikat di keranjang")
+        seen.add(key)
+        variant = find_variant(item.variant_id)
         if not variant:
-            raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-        
-        # Validasi stok jual
-        if variant["sale_qty"] < transaction.qty:
-            raise HTTPException(status_code=400, detail=f"Stok jual hanya {variant['sale_qty']} unit")
-        
-        # Validasi harga dalam range
-        if not (variant["minimum_price"] <= transaction.unit_price <= variant["normal_price"]):
-            raise HTTPException(
-                status_code=400,
-                detail=f"Harga harus antara {variant['minimum_price']} - {variant['normal_price']}"
-            )
-        
-        # Create transaction
-        trans_doc = {
-            "_id": ObjectId(),
-            "variant_id": ObjectId(transaction.variant_id),
-            "product_id": variant["product_id"],
-            "color": variant["color"],
-            "size": variant["size"],
-            "qty": transaction.qty,
-            "unit_price": transaction.unit_price,
-            "total_price": transaction.qty * transaction.unit_price,
-            "hpp": variant["hpp"],
-            "profit": transaction.qty * (transaction.unit_price - variant["hpp"]),
-            "payment_method": transaction.payment_method or "cash",
-            "created_at": datetime.utcnow()
-        }
-        db["transactions"].insert_one(trans_doc)
-        
-        # Update sale_qty
-        db["variants"].update_one(
-            {"_id": ObjectId(transaction.variant_id)},
-            {"$inc": {"sale_qty": -transaction.qty}}
-        )
-        
-        add_stock_move(transaction.variant_id, "sale", "sold", transaction.qty, f"Transaksi Rp{transaction.unit_price}")
-    
+            raise HTTPException(status_code=404, detail=f"Varian {item.variant_id} tidak ditemukan")
+        if int(variant.get("sale_qty", 0)) < item.qty:
+            raise HTTPException(status_code=400, detail=f"Stok jual {variant.get('color','')} {variant.get('size','')} tidak mencukupi")
+        validate_price(variant, item.unit_price)
+
+    if USE_MONGO:
+        # Mongo transactions may not be available on every deployment/topology.
+        # Sequential atomic decrements still prevent overselling.
+        docs = [create_one_transaction(item, batch.payment_method or "cash") for item in batch.items]
+    else:
+        docs = [create_one_transaction(item, batch.payment_method or "cash") for item in batch.items]
+
+    invoice = docs[0]["invoice_no"] if docs else invoice_no()
     return {
-        "id": str(trans_doc["_id"]),
-        "message": "Transaksi berhasil dicatat",
-        "profit": trans_doc["profit"]
+        "invoice_no": invoice,
+        "message": f"{len(docs)} item transaksi berhasil dicatat",
+        "items": docs,
+        "total": sum(int(d["total"]) for d in docs),
+        "profit": sum(int(d["profit"]) for d in docs),
     }
 
 @app.get("/api/transactions")
-async def list_transactions(limit: int = Query(100)):
-    """List transaksi terbaru"""
+async def list_transactions(limit: int = Query(100, ge=1, le=200)):
     transactions = get_transactions()
-    return transactions[:limit]
+    products = product_map()
+    output = []
+    for t in transactions[:limit]:
+        item = dict(t)
+        item["id"] = str(t.get("_id", t.get("id", "")))
+        item["variant_id"] = str(t.get("variant_id", ""))
+        p = products.get(str(t.get("product_id")), {})
+        item["product_name"] = t.get("product_name") or p.get("name", "")
+        item["model"] = t.get("model") or p.get("model", "")
+        item["image_url"] = t.get("image_url") or p.get("image_url")
+        item["total"] = int(t.get("total", t.get("total_price", 0)) or 0)
+        output.append(item)
+    return json_safe(output)
 
+# ============================================================
+# COLORS
+# ============================================================
 @app.get("/api/colors")
 async def list_colors(product_id: Optional[str] = Query(None)):
-    """List warna"""
     colors = get_colors()
     if product_id:
         colors = [c for c in colors if str(c.get("product_id")) == product_id]
-    return colors
+    return json_safe([
+        {
+            **c,
+            "id": str(c.get("_id", c.get("id", ""))),
+            "product_id": str(c.get("product_id", "")),
+        }
+        for c in colors
+    ])
 
 @app.delete("/api/colors/{color_id}")
 async def delete_color(color_id: str):
-    """Soft-delete warna (jika tidak ada varian yang pakai)"""
     if USE_MONGO:
-        from bson.objectid import ObjectId
-        
-        # Cek ada varian yang masih pakai warna ini?
-        variants_using = db["variants"].find_one({
-            "color_id": ObjectId(color_id),
-            "deleted": {"$ne": True}
-        })
-        
-        if variants_using:
-            raise HTTPException(status_code=400, detail="Tidak bisa hapus warna yang masih dipakai varian")
-        
-        result = db["colors"].update_one(
-            {"_id": ObjectId(color_id)},
-            {"$set": {"deleted": True}}
-        )
-        
-        if result.matched_count == 0:
+        color = db.colors.find_one({"_id": oid(color_id), "deleted": {"$ne": True}})
+        if not color:
             raise HTTPException(status_code=404, detail="Warna tidak ditemukan")
-    
+        if db.variants.find_one({"color_id": oid(color_id), "deleted": {"$ne": True}}):
+            raise HTTPException(status_code=400, detail="Tidak bisa hapus warna yang masih dipakai varian")
+        db.colors.update_one({"_id": oid(color_id)}, {"$set": {"deleted": True}})
+    else:
+        data = load_json("colors", {"items": []})
+        found = next((c for c in data["items"] if str(c.get("id")) == color_id and not c.get("deleted")), None)
+        if not found:
+            raise HTTPException(status_code=404, detail="Warna tidak ditemukan")
+        if any(str(v.get("color_id")) == color_id and not v.get("deleted") for v in get_variants()):
+            raise HTTPException(status_code=400, detail="Tidak bisa hapus warna yang masih dipakai varian")
+        found["deleted"] = True
+        save_json("colors", data)
     return {"message": "Warna dihapus"}
 
-@app.get("/uploads/{filename}")
-async def serve_upload(filename: str):
-    """Serve local uploaded files"""
-    file_path = Path("/tmp/stokku_uploads") / filename
-    if file_path.exists():
-        return FileResponse(file_path)
-    raise HTTPException(status_code=404, detail="File tidak ditemukan")
-
+# ============================================================
+# ENTRYPOINT
+# ============================================================
 if __name__ == "__main__":
     import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", 8000)))
+    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))

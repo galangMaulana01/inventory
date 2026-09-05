@@ -121,7 +121,7 @@
           const searchable = `${variant.product_name ?? ""} ${variant.model ?? ""} ${variant.color ?? ""} ${variant.size ?? ""}`.toLowerCase();
           if ((location !== "all" && Number(variant[stockField] ?? 0) <= 0) || !searchable.includes(query.toLowerCase())) return;
           if (!groups.has(variant.product_id)) groups.set(variant.product_id, { ...variant, variants: [], warehouseTotal: 0, saleTotal: 0 });
-          const product = groups.get(variant.product_id);
+          const product = groups.get(String(variant.product_id));
           product.variants.push(variant);
           product.warehouseTotal += Number(variant.warehouse_qty ?? 0);
           product.saleTotal += Number(variant.sale_qty ?? 0);
@@ -313,7 +313,7 @@
       function cartTotal() { return state.cart.reduce((total, item) => total + (item.qty * item.unit_price), 0); }
 
       function openSalesSheet(productId = null, view = "sell") {
-        if (productId) { state.saleProductId = Number(productId); state.saleColorId = null; state.saleVariantId = null; }
+        if (productId) { state.saleProductId = String(productId); state.saleColorId = null; state.saleVariantId = null; }
         renderSalesSheet(view); showModal("salesSheet");
       }
 
@@ -358,7 +358,7 @@
 
       // ===== 4. DETAIL PRODUK & FORM =====
       function openDetail(productId) {
-        const product=groupedProducts("all").find(p=>p.product_id===Number(productId)); if(!product)return;
+        const product=groupedProducts("all").find(p=>String(p.product_id)===String(productId)); if(!product)return;
         const colors=groupedColors(product);
         $("detailContent").innerHTML=`<div class="flex items-start justify-between gap-4"><div><p class="text-xs font-black tracking-widest text-blue-600">KELOLA STOK GUDANG</p><h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2><p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)} · ${colors.length} warna</p></div><button data-close="detailModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><div class="mt-5 overflow-hidden rounded-3xl border border-slate-100 bg-white"><div class="aspect-[16/8] bg-slate-100">${productPhoto(product,"h-full w-full")}</div></div><div class="mt-5 space-y-3">${colors.map(c=>`<section class="rounded-3xl border border-slate-100 bg-white p-4"><div class="flex items-center justify-between gap-3"><div class="flex items-center gap-3">${colorDot(c.color,"size-9",c.color_hex)}<div><h3 class="font-black">${escapeHtml(c.color)}</h3><p class="text-xs text-slate-400">${c.variants.length} size · ${c.variants.reduce((s,v)=>s+v.warehouse_qty,0)} unit gudang</p></div></div><button data-add-color-size="${c.color_id}" data-product-id="${product.product_id}" class="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">+ Size</button></div><div class="mt-4 space-y-2">${c.variants.map(v=>`<div class="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2"><div><p class="font-bold">Size ${escapeHtml(v.size)}</p><p class="text-xs text-slate-400">Gudang ${v.warehouse_qty} · Jual ${v.sale_qty}</p><p class="mt-1 text-xs font-bold text-slate-500">HPP ${rupiah(v.hpp)} · Normal ${rupiah(v.normal_price)}</p></div><div class="flex gap-1"><button data-edit-variant="${v.id}" class="rounded-xl bg-white px-2 py-1.5 text-xs font-bold text-blue-600 ring-1 ring-slate-200">Edit</button><button data-transfer-variant="${v.id}" class="rounded-xl bg-blue-600 px-2 py-1.5 text-xs font-bold text-white">Pindah</button><button data-delete-variant="${v.id}" class="rounded-xl bg-rose-50 px-2 py-1.5 text-xs font-bold text-rose-600">Hapus</button></div></div>`).join("")}</div></section>`).join("")}</div><div class="mt-5 flex gap-2"><button data-delete-product="${product.product_id}" class="rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold text-rose-600">Hapus produk</button><button data-add-to-product="${product.product_id}" class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Tambah warna / size</button>`;
         showModal("detailModal");
@@ -366,7 +366,7 @@
 
       function openVariantModal(variant=null, productId="", colorName="", initialHex="") {
         $("variantForm").reset(); $("editingVariantId").value=variant?.id||"";
-        $("variantProduct").innerHTML=state.products.map(p=>`<option value="${p.id}" ${Number(productId||variant?.product_id)===p.id?"selected":""}>${escapeHtml(p.name)} · ${escapeHtml(p.model)}</option>`).join("");
+        $("variantProduct").innerHTML=state.products.map(p=>`<option value="${p.id}" ${String(productId||variant?.product_id)===String(p.id)?"selected":""}>${escapeHtml(p.name)} · ${escapeHtml(p.model)}</option>`).join("");
         const cName=colorName||variant?.color||""; const cHex=initialHex||variant?.color_hex||colorHex(cName);
         $("variantColorPicker").innerHTML=colorPickerHtml(cName,cHex); $("variantColor").value=cName; $("variantColorHex").value=variant?.color_hex||cHex;
         $("variantCustomSlot").innerHTML=(cName && !COLOR_PALETTE.some(([n])=>n.toLowerCase()===cName.toLowerCase()))?customColorEditor(cName,cHex):"";
@@ -390,8 +390,8 @@
 
         // Normalize API payloads so one missing/null response cannot break the whole UI.
         state.dashboard = dashboard && typeof dashboard === "object" ? dashboard : {};
-        state.products = Array.isArray(products) ? products : [];
-        state.variants = Array.isArray(variants) ? variants : [];
+        state.products = Array.isArray(products) ? products.map((p) => ({ ...p, id: String(p.id ?? p._id) })) : [];
+        state.variants = Array.isArray(variants) ? variants.map((v) => ({ ...v, id: String(v.id ?? v._id), product_id: String(v.product_id), color_id: String(v.color_id) })) : [];
         state.transactions = Array.isArray(transactions) ? transactions : [];
 
         // Render navigation before other sections so a section-level issue cannot hide navigation.
@@ -416,24 +416,24 @@
         const mode = event.target.closest("[data-stock-mode]")?.dataset.stockMode; if (mode) { state.stockMode = mode; renderStock(); }
         const product = event.target.closest("[data-open-product]")?.dataset.openProduct; if (product) openDetail(product);
         const sellProduct = event.target.closest("[data-sell-product]")?.dataset.sellProduct; if (sellProduct) openSalesSheet(sellProduct);
-        const saleColor = event.target.closest("[data-sale-color]")?.dataset.saleColor; if (saleColor) { state.saleColorId = Number(saleColor); state.saleVariantId = null; renderSalesSheet(); }
-        const saleVariant = event.target.closest("[data-sale-variant]")?.dataset.saleVariant; if (saleVariant) { state.saleVariantId = Number(saleVariant); renderSalesSheet(); }
+        const saleColor = event.target.closest("[data-sale-color]")?.dataset.saleColor; if (saleColor) { state.saleColorId = String(saleColor); state.saleVariantId = null; renderSalesSheet(); }
+        const saleVariant = event.target.closest("[data-sale-variant]")?.dataset.saleVariant; if (saleVariant) { state.saleVariantId = String(saleVariant); renderSalesSheet(); }
         if (event.target.closest("[data-add-cart]")) addToCart();
         if (event.target.closest("[data-open-cart]")) renderSalesSheet("cart");
-        const removeCart = event.target.closest("[data-remove-cart]")?.dataset.removeCart; if (removeCart) { state.cart = state.cart.filter((item) => item.variant_id !== Number(removeCart)); renderCartButton(); renderSalesSheet("cart"); }
+        const removeCart = event.target.closest("[data-remove-cart]")?.dataset.removeCart; if (removeCart) { state.cart = state.cart.filter((item) => String(item.variant_id) !== String(removeCart)); renderCartButton(); renderSalesSheet("cart"); }
         if (event.target.closest("[data-checkout-cart]")) checkoutCart();
         const historyDate = event.target.closest("[data-history-date]")?.dataset.historyDate; if (historyDate) { state.historyDate = historyDate; renderHistory(); }
         if (event.target.closest("#customDateButton")) { const input = $("customHistoryDate"); input.showPicker ? input.showPicker() : input.click(); }
         const transactionProduct = event.target.closest("[data-transaction-product]")?.dataset.transactionProduct;
-        if (transactionProduct) { state.transactionProductId = Number(transactionProduct); state.transactionColorId = null; state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
+        if (transactionProduct) { state.transactionProductId = String(transactionProduct); state.transactionColorId = null; state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
         const transactionColor = event.target.closest("[data-transaction-color]")?.dataset.transactionColor;
-        if (transactionColor) { state.transactionColorId = Number(transactionColor); state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
+        if (transactionColor) { state.transactionColorId = String(transactionColor); state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
         const transactionVariant = event.target.closest("[data-transaction-variant]")?.dataset.transactionVariant;
-        if (transactionVariant) { state.transactionVariantId = Number(transactionVariant); $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
-        const edit = event.target.closest("[data-edit-variant]")?.dataset.editVariant; if (edit) { hideModal("detailModal"); openVariantModal(state.variants.find((variant) => variant.id === Number(edit))); }
-        const add = event.target.closest("[data-add-to-product]")?.dataset.addToProduct; if (add) { hideModal("detailModal"); openVariantModal(null, Number(add)); }
-        const addColor = event.target.closest("[data-add-color-size]"); if (addColor) { const v=state.variants.find(x=>x.product_id===Number(addColor.dataset.productId) && x.color_id===Number(addColor.dataset.addColorSize)); hideModal("detailModal"); openVariantModal(null, Number(addColor.dataset.productId), v?.color||"", v?.color_hex||""); }
-        const transfer = event.target.closest("[data-transfer-variant]")?.dataset.transferVariant; if (transfer) { hideModal("detailModal"); openTransferModal(Number(transfer)); }
+        if (transactionVariant) { state.transactionVariantId = String(transactionVariant); $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
+        const edit = event.target.closest("[data-edit-variant]")?.dataset.editVariant; if (edit) { hideModal("detailModal"); openVariantModal(state.variants.find((variant) => String(variant.id) === String(edit))); }
+        const add = event.target.closest("[data-add-to-product]")?.dataset.addToProduct; if (add) { hideModal("detailModal"); openVariantModal(null, String(add)); }
+        const addColor = event.target.closest("[data-add-color-size]"); if (addColor) { const v=state.variants.find(x=>String(x.product_id)===String(addColor.dataset.productId) && String(x.color_id)===String(addColor.dataset.addColorSize)); hideModal("detailModal"); openVariantModal(null, String(addColor.dataset.productId), v?.color||"", v?.color_hex||""); }
+        const transfer = event.target.closest("[data-transfer-variant]")?.dataset.transferVariant; if (transfer) { hideModal("detailModal"); openTransferModal(String(transfer)); }
         const deleteVariant = event.target.closest("[data-delete-variant]")?.dataset.deleteVariant; 
         if (deleteVariant) { 
           if (confirm("Hapus varian ini? Stok jual akan hilang.")) {
@@ -460,13 +460,13 @@
       });
 
       function openTransferModal(variantId) {
-        const variant = state.variants.find(v => v.id === variantId);
+        const variant = state.variants.find(v => String(v.id) === String(variantId));
         if (!variant) { toast("Varian tidak ditemukan", true); return; }
         
         // Populate dropdown dengan semua varian produk ini
-        const productVariants = state.variants.filter(v => v.product_id === variant.product_id && v.warehouse_qty > 0);
+        const productVariants = state.variants.filter(v => String(v.product_id) === String(variant.product_id) && v.warehouse_qty > 0);
         $("transferVariant").innerHTML = productVariants.map(v => 
-          `<option value="${v.id}" ${v.id === variantId ? "selected" : ""}>${v.color} - Size ${v.size} (${v.warehouse_qty} unit)</option>`
+          `<option value="${v.id}" ${String(v.id) === String(variantId) ? "selected" : ""}>${v.color} - Size ${v.size} (${v.warehouse_qty} unit)</option>`
         ).join("");
         
         $("transferQty").value = ""; 
@@ -501,14 +501,14 @@
       });
 
       $("variantForm").addEventListener("submit",async(event)=>{
-        event.preventDefault(); const id=$("editingVariantId").value; const payload={product_id:Number($("variantProduct").value),color:$("variantColor").value.trim(),color_hex:$("variantColorHex").value.trim()||null,size:$("variantSize").value.trim(),warehouse_qty:Number($("variantWarehouseQty").value),hpp:Number($("variantHpp").value),normal_price:Number($("variantNormalPrice").value),minimum_price:Number($("variantMinimumPrice").value)};
+        event.preventDefault(); const id=$("editingVariantId").value; const payload={product_id:String($("variantProduct").value),color:$("variantColor").value.trim(),color_hex:$("variantColorHex").value.trim()||null,size:$("variantSize").value.trim(),warehouse_qty:Number($("variantWarehouseQty").value),hpp:Number($("variantHpp").value),normal_price:Number($("variantNormalPrice").value),minimum_price:Number($("variantMinimumPrice").value)};
         if(!payload.color)return toast("Pilih atau buat warna custom terlebih dahulu.",true); try{const result=await request(id?`/api/variants/${id}`:"/api/variants",{method:id?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});hideModal("variantModal");toast(result.message);await loadAll();}catch(error){toast(error.message,true);}
       });
 
       $("transferForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
-          const result = await request("/api/transfers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variant_id: Number($("transferVariant").value), qty: Number($("transferQty").value) }) });
+          const result = await request("/api/transfers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variant_id: String($("transferVariant").value), qty: Number($("transferQty").value) }) });
           hideModal("transferModal"); toast(result.message); await loadAll(); state.stockMode = "sale"; switchPage("stock");
         } catch (error) { toast(error.message, true); }
       });
