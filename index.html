@@ -9,10 +9,12 @@
     <style>
       .sheet {
         opacity: 0;
+        pointer-events: none;
         transition: opacity .2s ease;
       }
       .sheet:not(.hidden) {
         opacity: 1;
+        pointer-events: auto;
       }
       .sheet .sheet-panel {
         transform: translateY(100%);
@@ -149,14 +151,14 @@
         if (panel) {
           // Force reflow so browser registers the starting position
           panel.offsetHeight;
-          requestAnimationFrame(() => panel.classList.add("sheet-open"));
+          requestAnimationFrame(() => el.classList.add("sheet-open"));
         }
       }
       function hideModal(id) { 
         const el = $(id);
+        el.classList.remove("sheet-open"); 
         const panel = el.querySelector(".sheet-panel");
         if (panel) {
-          panel.classList.remove("sheet-open");
           // Wait for transition to finish before hiding
           setTimeout(() => {
             el.classList.add("hidden"); 
