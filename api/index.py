@@ -267,6 +267,12 @@ def add_stock_move(variant_id, from_type, to_type, qty, notes=""):
 # ============================================================
 if USE_MONGO:
     try:
+        # Drop old non-unique index if exists
+        try:
+            db.colors.drop_index("color_product_lower")
+        except Exception:
+            pass
+        
         db.variants.create_index(
             [("product_id", 1), ("color_lower", 1), ("size", 1)],
             unique=True,
