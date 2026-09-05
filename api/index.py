@@ -608,9 +608,12 @@ async def create_variant(variant: VariantInput):
                 db.colors.insert_one(color_doc)
                 color = color_doc
             except DuplicateKeyError:
-                # Race condition: another request created it
-                color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
-                if not color:
+                # Race condition: another request created it, or soft-deleted color blocks unique index
+                # Find any color (including deleted) and restore it
+                color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm})
+                if color:
+                    db.colors.update_one({"_id": color["_id"]}, {"$set": {"deleted": False, "color": variant.color.strip(), "color_hex": variant.color_hex or "#cccccc"}})
+                else:
                     raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
         doc = {
             "_id": ObjectId(),
