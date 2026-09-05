@@ -602,31 +602,16 @@ async def create_variant(variant: VariantInput):
         if not color:
             # Remove any soft-deleted color with same product+color_lower first
             db.colors.delete_many({"product_id": product_oid, "color_lower": color_norm, "deleted": True})
-            # Atomic upsert on unique index (product_id + color_lower)
-            result = db.colors.find_one_and_update(
-                {"product_id": product_oid, "color_lower": color_norm},
-                {
-                    "$setOnInsert": {
-                        "_id": ObjectId(),
-                        "product_id": product_oid,
-                        "color": variant.color.strip(),
-                        "color_lower": color_norm,
-                        "color_hex": variant.color_hex or "#cccccc",
-                        "created_at": now_utc(),
-                        "deleted": False
-                    },
-                    "$set": {
-                        "color": variant.color.strip(),
-                        "color_hex": variant.color_hex or "#cccccc",
-                        "deleted": False
-                    }
-                },
-                upsert=True,
-                return_document=True
-            )
-            color = result
-            if not color:
-                raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
+            # Try to insert new color, handle race condition
+            color_doc = {"_id": ObjectId(), "product_id": product_oid, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}
+            try:
+                db.colors.insert_one(color_doc)
+                color = color_doc
+            except DuplicateKeyError:
+                # Race condition: another request created it
+                color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
+                if not color:
+                    raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
         doc = {
             "_id": ObjectId(),
             "product_id": product_oid,
