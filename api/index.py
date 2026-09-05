@@ -600,10 +600,26 @@ async def create_variant(variant: VariantInput):
             raise HTTPException(status_code=400, detail=f"Duplikat: warna {variant.color} dengan size {size} sudah ada")
         color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
         if not color:
-            # Use upsert to handle race condition atomically
+            # Atomic upsert on unique index (product_id + color_lower)
+            # This handles race conditions and soft-deleted colors atomically
             result = db.colors.find_one_and_update(
                 {"product_id": product_oid, "color_lower": color_norm},
-                {"$setOnInsert": {"_id": ObjectId(), "product_id": product_oid, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}},
+                {
+                    "$setOnInsert": {
+                        "_id": ObjectId(),
+                        "product_id": product_oid,
+                        "color": variant.color.strip(),
+                        "color_lower": color_norm,
+                        "color_hex": variant.color_hex or "#cccccc",
+                        "created_at": now_utc(),
+                        "deleted": False
+                    },
+                    "$set": {
+                        "color": variant.color.strip(),
+                        "color_hex": variant.color_hex or "#cccccc",
+                        "deleted": False
+                    }
+                },
                 upsert=True,
                 return_document=True
             )
