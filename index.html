@@ -116,14 +116,15 @@
       function groupedProducts(location = "all", query = "") {
         const stockField = location === "sale" ? "sale_qty" : "warehouse_qty";
         const groups = new Map();
-        state.variants.forEach((variant) => {
-          const searchable = `${variant.product_name} ${variant.model} ${variant.color} ${variant.size}`.toLowerCase();
-          if ((location !== "all" && variant[stockField] <= 0) || !searchable.includes(query.toLowerCase())) return;
+        const variants = Array.isArray(state.variants) ? state.variants : [];
+        variants.forEach((variant) => {
+          const searchable = `${variant.product_name ?? ""} ${variant.model ?? ""} ${variant.color ?? ""} ${variant.size ?? ""}`.toLowerCase();
+          if ((location !== "all" && Number(variant[stockField] ?? 0) <= 0) || !searchable.includes(query.toLowerCase())) return;
           if (!groups.has(variant.product_id)) groups.set(variant.product_id, { ...variant, variants: [], warehouseTotal: 0, saleTotal: 0 });
           const product = groups.get(variant.product_id);
           product.variants.push(variant);
-          product.warehouseTotal += variant.warehouse_qty;
-          product.saleTotal += variant.sale_qty;
+          product.warehouseTotal += Number(variant.warehouse_qty ?? 0);
+          product.saleTotal += Number(variant.sale_qty ?? 0);
         });
         return [...groups.values()];
       }
@@ -160,24 +161,34 @@
       }
 
       function renderDashboard() {
-        const data = state.dashboard;
+        const data = state.dashboard || {};
+        const transactionCount = Number(data.transaction_count_today ?? data.transactions_today ?? 0);
+        const capital = Number(data.capital ?? data.total_capital ?? 0);
+
         $("revenueMetric").textContent = rupiah(data.revenue_today);
-        $("warehouseMetric").textContent = `${data.warehouse_qty} Unit`;
-        $("saleMetric").textContent = `${data.sale_qty} Unit`;
-        $("transactionMetric").textContent = data.transaction_count_today;
-        $("capitalMetric").textContent = `Modal ${rupiah(data.capital)}`;
-        $("dashboardSubtitle").textContent = data.transaction_count_today ? `${data.transaction_count_today} transaksi berhasil dicatat hari ini.` : "Belum ada transaksi tercatat hari ini.";
-        
+        $("warehouseMetric").textContent = `${Number(data.warehouse_qty ?? 0)} Unit`;
+        $("saleMetric").textContent = `${Number(data.sale_qty ?? 0)} Unit`;
+        $("transactionMetric").textContent = transactionCount;
+        $("capitalMetric").textContent = `Modal ${rupiah(capital)}`;
+        $("dashboardSubtitle").textContent = transactionCount
+          ? `${transactionCount} transaksi berhasil dicatat hari ini.`
+          : "Belum ada transaksi tercatat hari ini.";
+
         // Payment breakdown
         const today = new Date().toISOString().slice(0, 10);
-        const todayTransactions = state.transactions.filter(t => new Date(t.created_at).toISOString().slice(0, 10) === today);
-        const bankTrans = todayTransactions.filter(t => t.payment_method === "bank");
-        const walletTrans = todayTransactions.filter(t => t.payment_method === "wallet");
-        const cashTrans = todayTransactions.filter(t => t.payment_method === "cash");
-        const bankTotal = bankTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
-        const walletTotal = walletTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
-        const cashTotal = cashTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
-        
+        const todayTransactions = Array.isArray(state.transactions)
+          ? state.transactions.filter((t) => {
+              const createdAt = new Date(t.created_at);
+              return !Number.isNaN(createdAt.getTime()) && createdAt.toISOString().slice(0, 10) === today;
+            })
+          : [];
+        const bankTrans = todayTransactions.filter((t) => t.payment_method === "bank");
+        const walletTrans = todayTransactions.filter((t) => t.payment_method === "wallet");
+        const cashTrans = todayTransactions.filter((t) => t.payment_method === "cash");
+        const bankTotal = bankTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
+        const walletTotal = walletTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
+        const cashTotal = cashTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
+
         $("dashPaymentTotal").textContent = rupiah(bankTotal + walletTotal + cashTotal);
         $("dashPaymentCount").textContent = `${todayTransactions.length} transaksi`;
         $("dashPaymentBank").textContent = rupiah(bankTotal);
@@ -186,9 +197,19 @@
         $("dashPaymentWalletCount").textContent = `${walletTrans.length} transaksi`;
         $("dashPaymentCash").textContent = rupiah(cashTotal);
         $("dashPaymentCashCount").textContent = `${cashTrans.length} transaksi`;
-        
-        $("recentTransactions").innerHTML = data.recent_transactions.length ? data.recent_transactions.map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p></div><strong class="text-sm">${rupiah(item.total)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
-        $("topProducts").innerHTML = data.top_products.length ? data.top_products.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${item.sold_qty} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
+
+        // Backend versi sekarang belum selalu mengirim recent_transactions/top_products.
+        // Fallback ke [] supaya dashboard tidak crash saat properti tersebut tidak ada.
+        const recentTransactions = Array.isArray(data.recent_transactions) ? data.recent_transactions : todayTransactions;
+        const topProducts = Array.isArray(data.top_products) ? data.top_products : [];
+
+        $("recentTransactions").innerHTML = recentTransactions.length
+          ? recentTransactions.map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${Number(item.qty || 0)} unit</p></div><strong class="text-sm">${rupiah(item.total ?? item.total_price ?? (Number(item.qty || 0) * Number(item.unit_price || 0)))}</strong></article>`).join("")
+          : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
+
+        $("topProducts").innerHTML = topProducts.length
+          ? topProducts.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${Number(item.sold_qty || 0)} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("")
+          : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
       }
 
       function renderStock() {
@@ -360,10 +381,25 @@
 
       // ===== 5. LOAD DATA & INTERAKSI =====
       async function loadAll() {
-        const [dashboard, products, variants, transactions] = await Promise.all([request("/api/dashboard"), request("/api/products"), request("/api/variants"), request("/api/transactions")]);
-        state.dashboard = dashboard; state.products = products; state.variants = variants; state.transactions = transactions;
-        // Render navigation before history so a history-rendering issue cannot hide the nav.
-        renderDashboard(); renderStock(); renderTransaction(); renderNavigation(); renderHistory();
+        const [dashboard, products, variants, transactions] = await Promise.all([
+          request("/api/dashboard"),
+          request("/api/products"),
+          request("/api/variants"),
+          request("/api/transactions")
+        ]);
+
+        // Normalize API payloads so one missing/null response cannot break the whole UI.
+        state.dashboard = dashboard && typeof dashboard === "object" ? dashboard : {};
+        state.products = Array.isArray(products) ? products : [];
+        state.variants = Array.isArray(variants) ? variants : [];
+        state.transactions = Array.isArray(transactions) ? transactions : [];
+
+        // Render navigation before other sections so a section-level issue cannot hide navigation.
+        renderNavigation();
+        renderDashboard();
+        renderStock();
+        renderTransaction();
+        renderHistory();
       }
 
       function switchPage(page) {
