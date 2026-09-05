@@ -600,8 +600,9 @@ async def create_variant(variant: VariantInput):
             raise HTTPException(status_code=400, detail=f"Duplikat: warna {variant.color} dengan size {size} sudah ada")
         color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
         if not color:
+            # Remove any soft-deleted color with same product+color_lower first
+            db.colors.delete_many({"product_id": product_oid, "color_lower": color_norm, "deleted": True})
             # Atomic upsert on unique index (product_id + color_lower)
-            # This handles race conditions and soft-deleted colors atomically
             result = db.colors.find_one_and_update(
                 {"product_id": product_oid, "color_lower": color_norm},
                 {
