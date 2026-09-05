@@ -35,6 +35,7 @@
             <article class="min-w-48 snap-start rounded-3xl bg-orange-500 p-5 text-white shadow-lg shadow-orange-500/20"><p class="text-sm font-semibold text-white/75">Stok jual</p><strong id="saleMetric" class="mt-2 block text-3xl font-black">0 Unit</strong><p class="mt-3 text-xs text-white/70">Siap diproses transaksi</p></article>
             <article class="min-w-48 snap-start rounded-3xl bg-slate-900 p-5 text-white shadow-lg shadow-slate-900/20"><p class="text-sm font-semibold text-slate-400">Transaksi</p><strong id="transactionMetric" class="mt-2 block text-3xl font-black">0</strong><p id="capitalMetric" class="mt-3 text-xs text-slate-400">Modal Rp0</p></article>
           </div>
+          <section class="rounded-3xl bg-white shadow-sm ring-1 ring-slate-100 p-6"><h2 class="font-extrabold mb-4">Transaksi Saat Ini</h2><div class="grid gap-3 sm:grid-cols-4"><div class="rounded-2xl bg-blue-50 p-4"><p class="text-xs font-bold text-blue-600">Total</p><p id="dashPaymentTotal" class="mt-2 text-lg font-black text-blue-600">Rp0</p><p id="dashPaymentCount" class="mt-1 text-xs text-blue-500">0 transaksi</p></div><div class="rounded-2xl bg-emerald-50 p-4"><p class="text-xs font-bold text-emerald-600">Bank</p><p id="dashPaymentBank" class="mt-2 text-lg font-black text-emerald-600">Rp0</p><p id="dashPaymentBankCount" class="mt-1 text-xs text-emerald-500">0 transaksi</p></div><div class="rounded-2xl bg-purple-50 p-4"><p class="text-xs font-bold text-purple-600">Wallet</p><p id="dashPaymentWallet" class="mt-2 text-lg font-black text-purple-600">Rp0</p><p id="dashPaymentWalletCount" class="mt-1 text-xs text-purple-500">0 transaksi</p></div><div class="rounded-2xl bg-orange-50 p-4"><p class="text-xs font-bold text-orange-600">Cash</p><p id="dashPaymentCash" class="mt-2 text-lg font-black text-orange-600">Rp0</p><p id="dashPaymentCashCount" class="mt-1 text-xs text-orange-500">0 transaksi</p></div></div></section>
           <div class="grid gap-5 xl:grid-cols-2">
             <section class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between p-5"><div><h2 class="font-extrabold">Transaksi terbaru</h2><p class="mt-1 text-sm text-slate-400">Aktivitas penjualan yang baru dicatat.</p></div><button data-go="history" class="text-sm font-bold text-blue-600">Lihat semua</button></div><div id="recentTransactions" class="border-t border-slate-100"></div></section>
             <section class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100"><div class="p-5"><h2 class="font-extrabold">Produk terlaris</h2><p class="mt-1 text-sm text-slate-400">Diurutkan dari unit terjual.</p></div><div id="topProducts" class="border-t border-slate-100"></div></section>
@@ -166,6 +167,26 @@
         $("transactionMetric").textContent = data.transaction_count_today;
         $("capitalMetric").textContent = `Modal ${rupiah(data.capital)}`;
         $("dashboardSubtitle").textContent = data.transaction_count_today ? `${data.transaction_count_today} transaksi berhasil dicatat hari ini.` : "Belum ada transaksi tercatat hari ini.";
+        
+        // Payment breakdown
+        const today = new Date().toISOString().slice(0, 10);
+        const todayTransactions = state.transactions.filter(t => new Date(t.created_at).toISOString().slice(0, 10) === today);
+        const bankTrans = todayTransactions.filter(t => t.payment_method === "bank");
+        const walletTrans = todayTransactions.filter(t => t.payment_method === "wallet");
+        const cashTrans = todayTransactions.filter(t => t.payment_method === "cash");
+        const bankTotal = bankTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
+        const walletTotal = walletTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
+        const cashTotal = cashTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
+        
+        $("dashPaymentTotal").textContent = rupiah(bankTotal + walletTotal + cashTotal);
+        $("dashPaymentCount").textContent = `${todayTransactions.length} transaksi`;
+        $("dashPaymentBank").textContent = rupiah(bankTotal);
+        $("dashPaymentBankCount").textContent = `${bankTrans.length} transaksi`;
+        $("dashPaymentWallet").textContent = rupiah(walletTotal);
+        $("dashPaymentWalletCount").textContent = `${walletTrans.length} transaksi`;
+        $("dashPaymentCash").textContent = rupiah(cashTotal);
+        $("dashPaymentCashCount").textContent = `${cashTrans.length} transaksi`;
+        
         $("recentTransactions").innerHTML = data.recent_transactions.length ? data.recent_transactions.map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p></div><strong class="text-sm">${rupiah(item.total)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
         $("topProducts").innerHTML = data.top_products.length ? data.top_products.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${item.sold_qty} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
       }
@@ -236,6 +257,26 @@
       }
 
       function renderHistory() {
+        const transactions = state.transactions.filter(t => new Date(t.created_at).toISOString().slice(0, 10) === state.historyDate);
+        const bankTrans = transactions.filter(t => t.payment_method === "bank");
+        const walletTrans = transactions.filter(t => t.payment_method === "wallet");
+        const cashTrans = transactions.filter(t => t.payment_method === "cash");
+        
+        const totalRevenue = transactions.reduce((s, t) => s + (t.qty * t.unit_price), 0);
+        const totalHpp = transactions.reduce((s, t) => s + (t.qty * t.hpp), 0);
+        const profit = totalRevenue - totalHpp;
+        const totalUnits = transactions.reduce((s, t) => s + t.qty, 0);
+        const bankRevenue = bankTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
+        const walletRevenue = walletTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
+        const cashRevenue = cashTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
+        
+        $("historySummaryRevenue").textContent = rupiah(profit);
+        $("historySummaryTransaction").textContent = transactions.length;
+        $("historySummaryUnits").textContent = totalUnits;
+        $("historySummaryBank").textContent = rupiah(bankRevenue);
+        $("historySummaryWallet").textContent = rupiah(walletRevenue);
+        $("historySummaryCash").textContent = rupiah(cashRevenue);
+        
         const records = state.transactions.filter((item) => item.created_at.slice(0, 10) === state.historyDate);
         renderHistoryDates();
         $("historyCards").innerHTML = records.length ? records.map((item) => `<article class="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100">${productPhoto(item, "size-16 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-black">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-sm text-slate-500">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-2 text-xs text-slate-400">${escapeHtml(item.invoice_no)} · ${dateTime(item.created_at)}</p></div><div class="text-right"><p class="font-black">${rupiah(item.total)}</p><p class="mt-1 text-xs text-slate-400">${rupiah(item.unit_price)}/unit</p></div></article>`).join("") : emptyState("Belum ada transaksi pada tanggal ini.");

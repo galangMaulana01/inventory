@@ -74,6 +74,7 @@ class TransactionInput(BaseModel):
     variant_id: str
     qty: int
     unit_price: int
+    payment_method: Optional[str] = "cash"  # bank, wallet, cash
 
 class TransferInput(BaseModel):
     variant_id: str
@@ -594,6 +595,7 @@ async def create_transaction(transaction: TransactionInput):
             "total_price": transaction.qty * transaction.unit_price,
             "hpp": variant["hpp"],
             "profit": transaction.qty * (transaction.unit_price - variant["hpp"]),
+            "payment_method": transaction.payment_method or "cash",
             "created_at": datetime.utcnow()
         }
         db["transactions"].insert_one(trans_doc)
