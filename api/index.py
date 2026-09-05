@@ -600,15 +600,16 @@ async def create_variant(variant: VariantInput):
             raise HTTPException(status_code=400, detail=f"Duplikat: warna {variant.color} dengan size {size} sudah ada")
         color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
         if not color:
-            color_doc = {"_id": ObjectId(), "product_id": product_oid, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}
-            try:
-                db.colors.insert_one(color_doc)
-                color = color_doc
-            except DuplicateKeyError:
-                # Race condition: another request created the same color concurrently
-                color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
-                if not color:
-                    raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
+            # Use upsert to handle race condition atomically
+            result = db.colors.find_one_and_update(
+                {"product_id": product_oid, "color_lower": color_norm},
+                {"$setOnInsert": {"_id": ObjectId(), "product_id": product_oid, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}},
+                upsert=True,
+                return_document=True
+            )
+            color = result
+            if not color:
+                raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
         doc = {
             "_id": ObjectId(),
             "product_id": product_oid,
