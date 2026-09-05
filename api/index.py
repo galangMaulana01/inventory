@@ -240,6 +240,12 @@ def validate_price(variant, unit_price):
     if not minimum <= unit_price <= normal:
         raise HTTPException(status_code=400, detail=f"Harga harus antara {minimum} - {normal}")
 
+def validate_payment_method(payment_method: str) -> str:
+    method = str(payment_method or "cash").strip().lower()
+    if method not in {"cash", "bank", "wallet"}:
+        raise HTTPException(status_code=400, detail="Metode pembayaran harus cash, bank, atau wallet")
+    return method
+
 def add_stock_move(variant_id, from_type, to_type, qty, notes=""):
     doc = {
         "variant_id": oid(variant_id) if USE_MONGO else str(variant_id),
@@ -583,21 +589,22 @@ async def create_variant(variant: VariantInput):
     size = variant.size.strip()
 
     if USE_MONGO:
-        existing = db.variants.find_one({
-            "product_id": oid(variant.product_id),
+        product_oid = oid(variant.product_id)
+        # Compare size case-insensitively as well, so "40" and "40 " / "m" and "M" cannot create duplicates.
+        existing_candidates = db.variants.find({
+            "product_id": product_oid,
             "color_lower": color_norm,
-            "size": size,
             "deleted": {"$ne": True},
         })
-        if existing:
-            raise HTTPException(status_code=400, detail=f"Duplikat: {variant.color} size {size} sudah ada")
-        color = db.colors.find_one({"product_id": oid(variant.product_id), "color_lower": color_norm, "deleted": {"$ne": True}})
+        if any(normalize_color(v.get("size")) == normalize_color(size) for v in existing_candidates):
+            raise HTTPException(status_code=400, detail=f"Duplikat: warna {variant.color} dengan size {size} sudah ada")
+        color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
         if not color:
-            color = {"_id": ObjectId(), "product_id": oid(variant.product_id), "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}
+            color = {"_id": ObjectId(), "product_id": product_oid, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}
             db.colors.insert_one(color)
         doc = {
             "_id": ObjectId(),
-            "product_id": oid(variant.product_id),
+            "product_id": product_oid,
             "color_id": color["_id"],
             "color": color["color"],
             "color_lower": color_norm,
@@ -660,6 +667,17 @@ async def update_variant(variant_id: str, variant: VariantUpdate):
         raise HTTPException(status_code=400, detail="Harga minimum tidak boleh melebihi harga normal")
 
     if USE_MONGO:
+        target_product_id = update.get("product_id", existing.get("product_id"))
+        target_color = normalize_color(str(update.get("color", existing.get("color", ""))))
+        target_size = normalize_color(str(update.get("size", existing.get("size", ""))))
+        duplicate_candidates = db.variants.find({
+            "product_id": target_product_id,
+            "color_lower": target_color,
+            "deleted": {"$ne": True},
+        })
+        for candidate in duplicate_candidates:
+            if str(candidate.get("_id")) != str(existing.get("_id")) and normalize_color(candidate.get("size")) == target_size:
+                raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
         if "product_id" in update:
             # Existing color must be recreated/looked up if product changes.
             color_name = str(update.get("color", existing.get("color", "")))
@@ -733,6 +751,7 @@ async def transfer_stock(transfer: TransferInput):
 # TRANSACTIONS
 # ============================================================
 def create_one_transaction(item: BatchItem, payment_method: str):
+    payment_method = validate_payment_method(payment_method)
     variant = find_variant(item.variant_id)
     if not variant:
         raise HTTPException(status_code=404, detail=f"Varian {item.variant_id} tidak ditemukan")
@@ -785,12 +804,14 @@ def create_one_transaction(item: BatchItem, payment_method: str):
 
 @app.post("/api/transactions")
 async def create_transaction(transaction: TransactionInput):
+    transaction.payment_method = validate_payment_method(transaction.payment_method)
     item = BatchItem(variant_id=transaction.variant_id, qty=transaction.qty, unit_price=transaction.unit_price)
     doc = create_one_transaction(item, transaction.payment_method or "cash")
     return {"id": doc["id"], "invoice_no": doc["invoice_no"], "message": "Transaksi berhasil dicatat", "profit": doc["profit"]}
 
 @app.post("/api/transactions/batch")
 async def create_batch_transaction(batch: BatchTransactionInput):
+    batch.payment_method = validate_payment_method(batch.payment_method)
     # Validate the whole cart first. This prevents a partial cart from being silently accepted.
     if len(batch.items) > 100:
         raise HTTPException(status_code=400, detail="Maksimal 100 item per transaksi")

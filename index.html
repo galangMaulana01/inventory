@@ -53,7 +53,7 @@
           <div><h2 class="text-2xl font-black">Input transaksi</h2><p class="mt-1 text-sm text-slate-500">Pilih produk, warna, lalu size dari stok jual.</p></div>
           <div class="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
             <section class="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between"><div><h3 class="font-extrabold">1. Pilih produk</h3><p class="mt-1 text-sm text-slate-400">Hanya stok siap jual.</p></div><button id="resetTransactionButton" class="text-sm font-bold text-blue-600">Reset</button></div><div id="transactionCatalog" class="mt-5 grid gap-3 sm:grid-cols-2"></div><div id="transactionSelection" class="mt-5"></div></section>
-            <form id="transactionForm" class="h-fit rounded-3xl bg-slate-950 p-6 text-white"><p class="text-sm font-medium text-slate-400">2. Buat transaksi</p><h3 id="selectedVariantName" class="mt-2 text-xl font-extrabold">Pilih produk dulu</h3><div id="priceRange" class="mt-5 rounded-2xl bg-white/10 p-4 text-sm text-slate-300">Pilih warna dan size untuk melihat harga.</div><div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-1"><label class="text-sm font-bold">Jumlah<input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label><label class="text-sm font-bold">Harga jual / unit<input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label></div><div class="mt-5 flex items-center justify-between border-y border-white/10 py-4"><span class="text-sm text-slate-400">Total transaksi</span><strong id="transactionTotal" class="text-2xl font-black">Rp0</strong></div><button id="saveTransactionButton" disabled class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white disabled:bg-white/20">Simpan transaksi</button></form>
+            <form id="transactionForm" class="h-fit rounded-3xl bg-slate-950 p-6 text-white"><p class="text-sm font-medium text-slate-400">2. Buat transaksi</p><h3 id="selectedVariantName" class="mt-2 text-xl font-extrabold">Pilih produk dulu</h3><div id="priceRange" class="mt-5 rounded-2xl bg-white/10 p-4 text-sm text-slate-300">Pilih warna dan size untuk melihat harga.</div><div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-1"><label class="text-sm font-bold">Jumlah<input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label><label class="text-sm font-bold">Harga jual / unit<input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label></div><div class="mt-5"><p class="text-sm font-bold">Metode pembayaran</p><div id="transactionPaymentMethods" class="mt-3 grid grid-cols-3 gap-2"><button type="button" data-transaction-payment="cash" class="rounded-xl px-3 py-3 text-xs font-bold">Cash</button><button type="button" data-transaction-payment="bank" class="rounded-xl px-3 py-3 text-xs font-bold">Bank</button><button type="button" data-transaction-payment="wallet" class="rounded-xl px-3 py-3 text-xs font-bold">Wallet</button></div></div><div class="mt-5 flex items-center justify-between border-y border-white/10 py-4"><span class="text-sm text-slate-400">Total transaksi</span><strong id="transactionTotal" class="text-2xl font-black">Rp0</strong></div><button id="saveTransactionButton" disabled class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white disabled:bg-white/20">Simpan transaksi</button></form>
           </div>
         </section>
 
@@ -85,7 +85,7 @@
       const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
         ? `http://${window.location.hostname}:8000`
         : window.location.origin;
-      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], historyDate: new Date().toISOString().slice(0, 10) };
+      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], paymentMethod: "cash", historyDate: new Date().toISOString().slice(0, 10) };
       const $ = (id) => document.getElementById(id);
       const rupiah = (value) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
       const dateTime = (value) => new Date(value).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
@@ -250,6 +250,7 @@
         const selectedProduct = products.find((product) => product.product_id === state.transactionProductId);
         $("transactionCatalog").innerHTML = products.length ? products.map((product) => `<button data-transaction-product="${product.product_id}" class="overflow-hidden rounded-2xl border text-left ${product.product_id === state.transactionProductId ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-100"}"><div class="flex gap-3 p-3">${productPhoto(product, "size-16 shrink-0 rounded-xl")}<div class="min-w-0"><p class="truncate font-bold">${escapeHtml(product.product_name)}</p><p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(product.model)}</p><p class="mt-2 text-xs font-bold text-blue-600">${product.saleTotal} unit siap jual</p></div></div></button>`).join("") : `<p class="col-span-full rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Belum ada stok jual.</p>`;
         $("transactionSelection").innerHTML = selectedProduct ? transactionSelection(selectedProduct) : "";
+        syncTransactionPaymentUI();
         updateTransactionSummary();
       }
 
@@ -259,6 +260,13 @@
         if (!state.transactionColorId && color) state.transactionColorId = color.color_id;
         const sizes = color.variants.filter((variant) => variant.sale_qty > 0);
         return `<div class="rounded-2xl bg-slate-50 p-4"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${item.color_id === state.transactionColorId ? "border-blue-600 bg-blue-600 text-white" : "border-white bg-white text-slate-600"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${variant.id === state.transactionVariantId ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-slate-400">Warna ini belum punya stok jual.</span>`}</div></div>`;
+      }
+
+      function syncTransactionPaymentUI() {
+        document.querySelectorAll("[data-transaction-payment]").forEach((button) => {
+          const active = button.dataset.transactionPayment === state.paymentMethod;
+          button.className = `rounded-xl px-3 py-3 text-xs font-bold ${active ? "bg-blue-600 text-white" : "bg-white/10 text-white"}`;
+        });
       }
 
       function updateTransactionSummary() {
@@ -329,7 +337,7 @@
       }
 
       function renderCartSheet() {
-        $("salesSheetContent").innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-xs font-black tracking-widest text-blue-600">KERANJANG</p><h2 class="mt-1 text-2xl font-black">Pesanan saat ini</h2></div><button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div>${state.cart.length ? `<div class="mt-6 space-y-3">${state.cart.map((item) => `<article class="flex items-center gap-3 rounded-2xl bg-slate-50 p-3">${productPhoto(item, "size-14 shrink-0 rounded-xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)}</p><p class="mt-1 text-xs text-slate-500">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-1 text-sm font-black">${rupiah(item.qty * item.unit_price)}</p></div><button data-remove-cart="${item.variant_id}" class="rounded-xl bg-white px-3 py-2 text-xs font-bold text-rose-600 ring-1 ring-slate-200">Hapus</button></article>`).join("")}</div><div class="mt-6 flex items-center justify-between border-y border-slate-200 py-4"><span class="font-bold">Total</span><strong class="text-2xl font-black">${rupiah(cartTotal())}</strong></div><button data-checkout-cart class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">Simpan transaksi</button>` : `<p class="mt-6 rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Keranjang masih kosong.</p>`}`;
+        $("salesSheetContent").innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-xs font-black tracking-widest text-blue-600">KERANJANG</p><h2 class="mt-1 text-2xl font-black">Pesanan saat ini</h2></div><button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div>${state.cart.length ? `<div class="mt-6 space-y-3">${state.cart.map((item) => `<article class="flex items-center gap-3 rounded-2xl bg-slate-50 p-3">${productPhoto(item, "size-14 shrink-0 rounded-xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)}</p><p class="mt-1 text-xs text-slate-500">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-1 text-sm font-black">${rupiah(item.qty * item.unit_price)}</p></div><button data-remove-cart="${item.variant_id}" class="rounded-xl bg-white px-3 py-2 text-xs font-bold text-rose-600 ring-1 ring-slate-200">Hapus</button></article>`).join("")}</div><div class="mt-6"><p class="text-sm font-black">Metode pembayaran</p><div class="mt-3 grid grid-cols-3 gap-2"><button type="button" data-payment-method="cash" class="rounded-xl border px-3 py-3 text-xs font-bold ${state.paymentMethod === "cash" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">Cash</button><button type="button" data-payment-method="bank" class="rounded-xl border px-3 py-3 text-xs font-bold ${state.paymentMethod === "bank" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">Bank</button><button type="button" data-payment-method="wallet" class="rounded-xl border px-3 py-3 text-xs font-bold ${state.paymentMethod === "wallet" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">Wallet</button></div></div><div class="mt-5 flex items-center justify-between border-y border-slate-200 py-4"><span class="font-bold">Total</span><strong class="text-2xl font-black">${rupiah(cartTotal())}</strong></div><button data-checkout-cart class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">Simpan transaksi</button>` : `<p class="mt-6 rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Keranjang masih kosong.</p>`}`;
       }
 
       function addToCart() {
@@ -350,7 +358,7 @@
           const result = await request("/api/transactions/batch", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ items: state.cart.map((item) => ({ variant_id: item.variant_id, qty: item.qty, unit_price: item.unit_price })) }),
+            body: JSON.stringify({ payment_method: state.paymentMethod, items: state.cart.map((item) => ({ variant_id: item.variant_id, qty: item.qty, unit_price: item.unit_price })) }),
           });
           state.cart = []; hideModal("salesSheet"); renderCartButton(); toast(`${result.message} (${result.invoice_no})`); await loadAll(); state.stockMode = "sale"; switchPage("stock");
         } catch (error) { toast(error.message, true); }
@@ -421,6 +429,8 @@
         if (event.target.closest("[data-add-cart]")) addToCart();
         if (event.target.closest("[data-open-cart]")) renderSalesSheet("cart");
         const removeCart = event.target.closest("[data-remove-cart]")?.dataset.removeCart; if (removeCart) { state.cart = state.cart.filter((item) => String(item.variant_id) !== String(removeCart)); renderCartButton(); renderSalesSheet("cart"); }
+        const paymentMethod = event.target.closest("[data-payment-method]")?.dataset.paymentMethod; if (paymentMethod) { state.paymentMethod = paymentMethod; renderSalesSheet("cart"); }
+        const transactionPayment = event.target.closest("[data-transaction-payment]")?.dataset.transactionPayment; if (transactionPayment) { state.paymentMethod = transactionPayment; syncTransactionPaymentUI(); }
         if (event.target.closest("[data-checkout-cart]")) checkoutCart();
         const historyDate = event.target.closest("[data-history-date]")?.dataset.historyDate; if (historyDate) { state.historyDate = historyDate; renderHistory(); }
         if (event.target.closest("#customDateButton")) { const input = $("customHistoryDate"); input.showPicker ? input.showPicker() : input.click(); }
@@ -516,7 +526,7 @@
       $("transactionForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
-          const result = await request("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variant_id: state.transactionVariantId, qty: Number($("transactionQty").value), unit_price: Number($("transactionPrice").value) }) });
+          const result = await request("/api/transactions", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variant_id: state.transactionVariantId, qty: Number($("transactionQty").value), unit_price: Number($("transactionPrice").value), payment_method: state.paymentMethod }) });
           toast(`${result.message} (${result.invoice_no})`); state.transactionProductId = null; state.transactionColorId = null; state.transactionVariantId = null; $("transactionForm").reset(); await loadAll();
         } catch (error) { toast(error.message, true); }
       });
