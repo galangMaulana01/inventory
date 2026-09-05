@@ -22,8 +22,7 @@
       <header class="sticky top-0 z-20 flex items-center justify-between border-b border-slate-100 bg-slate-50/95 px-5 py-4 backdrop-blur lg:px-10">
         <h1 id="pageTitle" class="text-xl font-extrabold">Dashboard</h1>
         <select id="dashboardFilter" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-blue-500">
-          <option value="1d" selected>1 Hari</option>
-          <option value="7d">7 Hari</option>
+          <option value="7d" selected>7 Hari</option>
           <option value="1m">1 Bulan</option>
           <option value="1y">1 Tahun</option>
           <option value="all">Semua</option>
@@ -43,6 +42,10 @@
             <article class="min-w-48 snap-start rounded-3xl bg-slate-900 p-5 text-white shadow-lg shadow-slate-900/20"><p class="text-sm font-semibold text-slate-400">Transaksi</p><strong id="transactionMetric" class="mt-2 block text-3xl font-black">0</strong><p id="capitalMetric" class="mt-3 text-xs text-slate-400">Modal Rp0</p></article>
           </div>
           <section class="rounded-3xl bg-white shadow-sm ring-1 ring-slate-100 p-6"><h2 class="font-extrabold mb-4">Transaksi Saat Ini</h2><div class="grid gap-3 sm:grid-cols-4"><div class="rounded-2xl bg-blue-50 p-4"><p class="text-xs font-bold text-blue-600">Total</p><p id="dashPaymentTotal" class="mt-2 text-lg font-black text-blue-600">Rp0</p><p id="dashPaymentCount" class="mt-1 text-xs text-blue-500">0 transaksi</p></div><div class="rounded-2xl bg-emerald-50 p-4"><p class="text-xs font-bold text-emerald-600">Bank</p><p id="dashPaymentBank" class="mt-2 text-lg font-black text-emerald-600">Rp0</p><p id="dashPaymentBankCount" class="mt-1 text-xs text-emerald-500">0 transaksi</p></div><div class="rounded-2xl bg-purple-50 p-4"><p class="text-xs font-bold text-purple-600">Wallet</p><p id="dashPaymentWallet" class="mt-2 text-lg font-black text-purple-600">Rp0</p><p id="dashPaymentWalletCount" class="mt-1 text-xs text-purple-500">0 transaksi</p></div><div class="rounded-2xl bg-orange-50 p-4"><p class="text-xs font-bold text-orange-600">Cash</p><p id="dashPaymentCash" class="mt-2 text-lg font-black text-orange-600">Rp0</p><p id="dashPaymentCashCount" class="mt-1 text-xs text-orange-500">0 transaksi</p></div></div></section>
+          <section class="rounded-3xl bg-white shadow-sm ring-1 ring-slate-100 p-6">
+            <div class="flex items-center justify-between"><h2 class="font-extrabold">Trend omzet 7 hari terakhir</h2><span id="trendBadge" class="rounded-full px-3 py-1 text-xs font-bold"></span></div>
+            <div id="trendChart" class="mt-5 flex h-32 items-end gap-2"></div>
+          </section>
           <div class="grid gap-5 xl:grid-cols-2">
             <section class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between p-5"><div><h2 class="font-extrabold">Transaksi terbaru</h2><p class="mt-1 text-sm text-slate-400">Aktivitas penjualan yang baru dicatat.</p></div><button data-go="history" class="text-sm font-bold text-blue-600">Lihat semua</button></div><div id="recentTransactions" class="border-t border-slate-100"></div></section>
             <section class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100"><div class="p-5"><h2 class="font-extrabold">Produk terlaris</h2><p class="mt-1 text-sm text-slate-400">Diurutkan dari unit terjual.</p></div><div id="topProducts" class="border-t border-slate-100"></div></section>
@@ -92,7 +95,7 @@
       const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
         ? `http://${window.location.hostname}:8000`
         : window.location.origin;
-      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], paymentMethod: "cash", historyDate: new Date().toISOString().slice(0, 10), dashboardFilter: "1d" };
+      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], paymentMethod: "cash", historyDate: new Date().toISOString().slice(0, 10), dashboardFilter: "7d" };
       const $ = (id) => document.getElementById(id);
       const rupiah = (value) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
       const dateTime = (value) => new Date(value).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
@@ -235,6 +238,54 @@
         $("topProducts").innerHTML = topProducts.length
           ? topProducts.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${Number(item.sold_qty || 0)} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("")
           : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
+
+        renderTrendCard();
+      }
+
+      function renderTrendCard() {
+        const days = 7;
+        const now = new Date();
+        const dayKey = (d) => d.toISOString().slice(0, 10);
+        const buckets = [];
+        for (let i = days - 1; i >= 0; i--) {
+          const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+          buckets.push({ key: dayKey(d), label: d.toLocaleDateString("id-ID", { weekday: "short" }), revenue: 0 });
+        }
+        const bucketByKey = Object.fromEntries(buckets.map((b) => [b.key, b]));
+        const prevStart = new Date(now.getTime() - days * 2 * 24 * 60 * 60 * 1000);
+        const prevEnd = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+        let prevPeriodRevenue = 0;
+
+        (Array.isArray(state.transactions) ? state.transactions : []).forEach((t) => {
+          const createdAt = new Date(t.created_at);
+          if (Number.isNaN(createdAt.getTime())) return;
+          const amount = Number(t.qty || 0) * Number(t.unit_price || 0);
+          const key = dayKey(createdAt);
+          if (bucketByKey[key]) {
+            bucketByKey[key].revenue += amount;
+          } else if (createdAt >= prevStart && createdAt < prevEnd) {
+            prevPeriodRevenue += amount;
+          }
+        });
+
+        const currentPeriodRevenue = buckets.reduce((s, b) => s + b.revenue, 0);
+        const max = Math.max(...buckets.map((b) => b.revenue), 1);
+
+        $("trendChart").innerHTML = buckets.map((b) => {
+          const heightPct = Math.max(4, Math.round((b.revenue / max) * 100));
+          return `<div class="flex flex-1 flex-col items-center gap-2"><div class="flex h-24 w-full items-end"><div class="w-full rounded-t-lg bg-blue-500" style="height:${heightPct}%" title="${rupiah(b.revenue)}"></div></div><span class="text-[11px] font-medium text-slate-400">${b.label}</span></div>`;
+        }).join("");
+
+        const badge = $("trendBadge");
+        if (prevPeriodRevenue <= 0) {
+          badge.textContent = currentPeriodRevenue > 0 ? "Baru" : "Belum ada data";
+          badge.className = "rounded-full bg-slate-100 px-3 py-1 text-xs font-bold text-slate-500";
+        } else {
+          const change = ((currentPeriodRevenue - prevPeriodRevenue) / prevPeriodRevenue) * 100;
+          const up = change >= 0;
+          badge.textContent = `${up ? "▲" : "▼"} ${Math.abs(change).toFixed(1)}% vs 7 hari sebelumnya`;
+          badge.className = `rounded-full px-3 py-1 text-xs font-bold ${up ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`;
+        }
       }
 
       function renderStock() {

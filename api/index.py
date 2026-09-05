@@ -55,7 +55,7 @@ app = FastAPI(title="Stokku Inventory API", version="2.0.0")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -267,21 +267,8 @@ def add_stock_move(variant_id, from_type, to_type, qty, notes=""):
 # ============================================================
 if USE_MONGO:
     try:
-        # Drop all existing color indexes
-        for idx in db.colors.list_indexes():
-            if idx["name"] not in ["_id_"]:
-                try:
-                    db.colors.drop_index(idx["name"])
-                except Exception:
-                    pass
-        # Drop all existing variant indexes
-        for idx in db.variants.list_indexes():
-            if idx["name"] not in ["_id_"]:
-                try:
-                    db.variants.drop_index(idx["name"])
-                except Exception:
-                    pass
-        
+        # create_index is idempotent when the name/spec match what's already
+        # there, so no need to drop existing indexes on every cold start.
         db.variants.create_index(
             [("product_id", 1), ("color_lower", 1), ("size", 1)],
             unique=True,
