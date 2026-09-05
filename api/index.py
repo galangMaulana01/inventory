@@ -274,6 +274,13 @@ if USE_MONGO:
                     db.colors.drop_index(idx["name"])
                 except Exception:
                     pass
+        # Drop all existing variant indexes
+        for idx in db.variants.list_indexes():
+            if idx["name"] not in ["_id_"]:
+                try:
+                    db.variants.drop_index(idx["name"])
+                except Exception:
+                    pass
         
         db.variants.create_index(
             [("product_id", 1), ("color_lower", 1), ("size", 1)],
