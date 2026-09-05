@@ -273,7 +273,13 @@ if USE_MONGO:
             name="variant_product_color_size_unique",
         )
         db.transactions.create_index([("created_at", -1)], name="transactions_created_at")
-        db.colors.create_index([("product_id", 1), ("color_lower", 1)], name="color_product_lower")
+        # Unique index on colors for active (non-deleted) colors only
+        db.colors.create_index(
+            [("product_id", 1), ("color_lower", 1)],
+            unique=True,
+            partialFilterExpression={"deleted": {"$ne": True}},
+            name="color_product_lower_unique_active"
+        )
         db.stock_moves.create_index([("created_at", -1)], name="stock_moves_created_at")
     except Exception as exc:
         print(f"Index warning: {exc}")
