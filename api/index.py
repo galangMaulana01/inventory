@@ -612,21 +612,32 @@ async def create_variant(variant: VariantInput):
             raise HTTPException(status_code=400, detail=f"Duplikat: warna {variant.color} dengan size {size} sudah ada")
         color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
         if not color:
-            # Remove any soft-deleted color with same product+color_lower first
-            db.colors.delete_many({"product_id": product_oid, "color_lower": color_norm, "deleted": True})
-            # Try to insert new color, handle race condition
-            color_doc = {"_id": ObjectId(), "product_id": product_oid, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc(), "deleted": False}
-            try:
-                db.colors.insert_one(color_doc)
-                color = color_doc
-            except DuplicateKeyError:
-                # Race condition: another request created it, or soft-deleted color blocks unique index
-                # Find any color (including deleted) and restore it
-                color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm})
-                if color:
-                    db.colors.update_one({"_id": color["_id"]}, {"$set": {"deleted": False, "color": variant.color.strip(), "color_hex": variant.color_hex or "#cccccc"}})
-                else:
-                    raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
+            # Use find_one_and_update with upsert to atomically create or restore color
+            # This works regardless of index state because it operates on the document directly
+            result = db.colors.find_one_and_update(
+                {"product_id": product_oid, "color_lower": color_norm},
+                {
+                    "$setOnInsert": {
+                        "_id": ObjectId(),
+                        "product_id": product_oid,
+                        "color": variant.color.strip(),
+                        "color_lower": color_norm,
+                        "color_hex": variant.color_hex or "#cccccc",
+                        "created_at": now_utc(),
+                        "deleted": False
+                    },
+                    "$set": {
+                        "color": variant.color.strip(),
+                        "color_hex": variant.color_hex or "#cccccc",
+                        "deleted": False
+                    }
+                },
+                upsert=True,
+                return_document=True
+            )
+            color = result
+            if not color:
+                raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
         doc = {
             "_id": ObjectId(),
             "product_id": product_oid,
