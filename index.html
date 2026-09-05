@@ -71,7 +71,7 @@
           <input id="variantColor" type="hidden" required />
           <input id="variantColorHex" type="hidden" />
           <div id="variantCustomSlot"></div>
-        </div><div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="text-sm font-bold text-slate-700">Stok gudang<input id="variantWarehouseQty" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">HPP / modal<input id="variantHpp" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga normal<input id="variantNormalPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga minimum<input id="variantMinimumPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label></div><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="variantModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan</button></div></form></div></div>
+        </div><label class="mt-4 block text-sm font-bold text-slate-700">Size<input id="variantSize" required placeholder="Contoh: M, L, XL atau 42" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="text-sm font-bold text-slate-700">Stok gudang<input id="variantWarehouseQty" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">HPP / modal<input id="variantHpp" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga normal<input id="variantNormalPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga minimum<input id="variantMinimumPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label></div><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="variantModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan</button></div></form></div></div>
 
     <div id="transferModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5"><div class="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"><div class="flex items-start justify-between"><div><p class="text-xs font-black tracking-widest text-blue-600">PINDAH STOK</p><h2 class="mt-1 text-xl font-black">Gudang ke stok jual</h2></div><button data-close="transferModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><form id="transferForm" class="mt-6"><label class="text-sm font-bold text-slate-700">Pilih varian<select id="transferVariant" required class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500"></select></label><label class="mt-4 block text-sm font-bold text-slate-700">Jumlah dipindahkan<input id="transferQty" type="number" min="1" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="transferModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Pindahkan</button></div></form></div></div>
 
@@ -270,12 +270,19 @@
         const walletRevenue = walletTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
         const cashRevenue = cashTrans.reduce((s, t) => s + (t.qty * t.unit_price), 0);
         
-        $("historySummaryRevenue").textContent = rupiah(profit);
-        $("historySummaryTransaction").textContent = transactions.length;
-        $("historySummaryUnits").textContent = totalUnits;
-        $("historySummaryBank").textContent = rupiah(bankRevenue);
-        $("historySummaryWallet").textContent = rupiah(walletRevenue);
-        $("historySummaryCash").textContent = rupiah(cashRevenue);
+        const historySummaryRevenue = $("historySummaryRevenue");
+        const historySummaryTransaction = $("historySummaryTransaction");
+        const historySummaryUnits = $("historySummaryUnits");
+        const historySummaryBank = $("historySummaryBank");
+        const historySummaryWallet = $("historySummaryWallet");
+        const historySummaryCash = $("historySummaryCash");
+
+        if (historySummaryRevenue) historySummaryRevenue.textContent = rupiah(profit);
+        if (historySummaryTransaction) historySummaryTransaction.textContent = transactions.length;
+        if (historySummaryUnits) historySummaryUnits.textContent = totalUnits;
+        if (historySummaryBank) historySummaryBank.textContent = rupiah(bankRevenue);
+        if (historySummaryWallet) historySummaryWallet.textContent = rupiah(walletRevenue);
+        if (historySummaryCash) historySummaryCash.textContent = rupiah(cashRevenue);
         
         const records = state.transactions.filter((item) => item.created_at.slice(0, 10) === state.historyDate);
         renderHistoryDates();
@@ -355,7 +362,8 @@
       async function loadAll() {
         const [dashboard, products, variants, transactions] = await Promise.all([request("/api/dashboard"), request("/api/products"), request("/api/variants"), request("/api/transactions")]);
         state.dashboard = dashboard; state.products = products; state.variants = variants; state.transactions = transactions;
-        renderDashboard(); renderStock(); renderTransaction(); renderHistory(); renderNavigation();
+        // Render navigation before history so a history-rendering issue cannot hide the nav.
+        renderDashboard(); renderStock(); renderTransaction(); renderNavigation(); renderHistory();
       }
 
       function switchPage(page) {
@@ -365,7 +373,7 @@
         renderNavigation(); window.scrollTo({ top: 0, behavior: "smooth" });
       }
 
-      document.addEventListener("click", (event) => {
+      document.addEventListener("click", async (event) => {
         const page = event.target.closest("[data-page]")?.dataset.page; if (page) switchPage(page);
         const go = event.target.closest("[data-go]")?.dataset.go; if (go) switchPage(go);
         const close = event.target.closest("[data-close]")?.dataset.close; if (close) hideModal(close);
