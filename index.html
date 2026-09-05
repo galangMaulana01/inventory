@@ -6,20 +6,6 @@
     <meta name="theme-color" content="#2563eb" />
     <title>Stokku — Inventori</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
-    <style>
-      /* Fallback navigasi mobile: tetap tampil meski proses data/API gagal. */
-      @media (max-width: 1023px) {
-        #mobileNav {
-          position: fixed !important; left: 0; right: 0; bottom: 0; z-index: 9999 !important;
-          display: flex !important; min-height: 72px; background: #fff;
-          border-top: 1px solid #e2e8f0; box-shadow: 0 -8px 24px rgba(15,23,42,.10);
-          padding: 8px 10px calc(8px + env(safe-area-inset-bottom));
-        }
-      }
-      @media (min-width: 1024px) { #mobileNav { display: none !important; } }
-      #mobileNav button { border: 0; background: transparent; cursor: pointer; }
-      #mobileNav button:active { transform: scale(.96); }
-    </style>
   </head>
 
   <body class="min-h-screen bg-slate-50 font-sans text-slate-900">
@@ -44,12 +30,10 @@
             <strong id="revenueMetric" class="mt-2 block text-4xl font-black tracking-tight sm:text-5xl">Rp0</strong>
             <p id="dashboardSubtitle" class="mt-3 text-sm text-slate-400">Belum ada transaksi hari ini.</p>
           </section>
-          <div class="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1 sm:mx-0 sm:grid sm:grid-cols-2 sm:overflow-visible sm:px-0 lg:grid-cols-4 xl:grid-cols-5">
-            <article class="min-w-52 snap-start rounded-3xl bg-blue-600 p-5 text-white shadow-lg shadow-blue-600/20"><p class="text-sm font-semibold text-white/75">Stok gudang</p><strong id="warehouseMetric" class="mt-2 block text-3xl font-black">0 Unit</strong><p class="mt-3 text-xs text-white/70">Barang belum dipajang</p></article>
-            <article class="min-w-52 snap-start rounded-3xl bg-orange-500 p-5 text-white shadow-lg shadow-orange-500/20"><p class="text-sm font-semibold text-white/75">Stok jual</p><strong id="saleMetric" class="mt-2 block text-3xl font-black">0 Unit</strong><p class="mt-3 text-xs text-white/70">Siap diproses transaksi</p></article>
-            <article class="min-w-52 snap-start rounded-3xl bg-emerald-500 p-5 text-white shadow-lg shadow-emerald-500/20"><p class="text-sm font-semibold text-white/75">Laba hari ini</p><strong id="profitMetric" class="mt-2 block text-2xl font-black">Rp0</strong><p class="mt-3 text-xs text-white/75">Omzet − HPP</p></article>
-            <article class="min-w-52 snap-start rounded-3xl bg-violet-600 p-5 text-white shadow-lg shadow-violet-600/20"><p class="text-sm font-semibold text-white/75">Penjualan hari ini</p><strong id="soldQtyMetric" class="mt-2 block text-3xl font-black">0 Unit</strong><p class="mt-3 text-xs text-white/75">Unit terjual hari ini</p></article>
-            <article class="min-w-52 snap-start rounded-3xl bg-slate-900 p-5 text-white shadow-lg shadow-slate-900/20"><p class="text-sm font-semibold text-slate-400">Transaksi</p><strong id="transactionMetric" class="mt-2 block text-3xl font-black">0</strong><p id="capitalMetric" class="mt-3 text-xs text-slate-400">Modal Rp0</p></article>
+          <div class="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1 sm:mx-0 sm:grid sm:grid-cols-3 sm:overflow-visible sm:px-0">
+            <article class="min-w-48 snap-start rounded-3xl bg-blue-600 p-5 text-white shadow-lg shadow-blue-600/20"><p class="text-sm font-semibold text-white/75">Stok gudang</p><strong id="warehouseMetric" class="mt-2 block text-3xl font-black">0 Unit</strong><p class="mt-3 text-xs text-white/70">Barang belum dipajang</p></article>
+            <article class="min-w-48 snap-start rounded-3xl bg-orange-500 p-5 text-white shadow-lg shadow-orange-500/20"><p class="text-sm font-semibold text-white/75">Stok jual</p><strong id="saleMetric" class="mt-2 block text-3xl font-black">0 Unit</strong><p class="mt-3 text-xs text-white/70">Siap diproses transaksi</p></article>
+            <article class="min-w-48 snap-start rounded-3xl bg-slate-900 p-5 text-white shadow-lg shadow-slate-900/20"><p class="text-sm font-semibold text-slate-400">Transaksi</p><strong id="transactionMetric" class="mt-2 block text-3xl font-black">0</strong><p id="capitalMetric" class="mt-3 text-xs text-slate-400">Modal Rp0</p></article>
           </div>
           <div class="grid gap-5 xl:grid-cols-2">
             <section class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between p-5"><div><h2 class="font-extrabold">Transaksi terbaru</h2><p class="mt-1 text-sm text-slate-400">Aktivitas penjualan yang baru dicatat.</p></div><button data-go="history" class="text-sm font-bold text-blue-600">Lihat semua</button></div><div id="recentTransactions" class="border-t border-slate-100"></div></section>
@@ -57,26 +41,17 @@
           </div>
         </section>
 
-        <section id="stockPage" class="page hidden min-h-[calc(100vh-9rem)] -mx-5 -mt-5 bg-slate-50 pb-28 lg:-mx-10 lg:-mt-10 lg:pb-10">
-          <div class="px-4 pt-7 sm:px-6 lg:px-10">
-            <div class="flex items-center justify-center"><h2 class="text-3xl font-black tracking-tight text-slate-950">STOK</h2></div>
-            <div class="mt-6 rounded-[1.75rem] bg-slate-200/70 p-1.5"><div class="grid grid-cols-2">
-              <button data-stock-mode="warehouse" class="stock-mode rounded-[1.35rem] px-5 py-4 text-lg font-black transition">Gudang</button>
-              <button data-stock-mode="sale" class="stock-mode rounded-[1.35rem] px-5 py-4 text-lg font-black transition">Pasar</button>
-            </div></div>
-            <label class="mt-4 flex h-20 items-center rounded-[1.75rem] bg-white px-6 shadow-sm ring-1 ring-slate-100"><span class="text-2xl text-slate-400">⌕</span><input id="stockSearch" class="ml-3 w-full bg-transparent text-lg outline-none placeholder:text-slate-400" placeholder="Cari Produk" /></label>
-            <p id="stockSummary" class="mt-4 px-1 text-sm font-medium text-slate-400"></p>
-            <div id="stockCards" class="mt-3 space-y-4"></div>
-          </div>
-          <div class="fixed inset-x-0 bottom-0 z-30 border-t border-slate-100 bg-white/95 px-5 py-4 backdrop-blur lg:static lg:mt-8 lg:border-0 lg:bg-transparent lg:px-10">
-            <button id="addProductButton" class="mx-auto block w-full max-w-sm rounded-[1.6rem] bg-blue-600 px-7 py-5 text-xl font-black text-white shadow-lg shadow-blue-600/20">Tambah produk</button>
-          </div>
-          <button id="cartButton" class="hidden fixed bottom-24 right-5 z-50 flex items-center gap-2 rounded-full bg-slate-950 px-5 py-4 font-black text-white shadow-xl shadow-slate-900/20 transition hover:scale-105 active:scale-95 lg:bottom-8 lg:right-8">🛒 Keranjang <span id="cartCount" class="grid size-6 place-items-center rounded-full bg-blue-500 text-xs">0</span></button>
+        <section id="stockPage" class="page hidden space-y-5">
+          <div class="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between"><div><h2 class="text-2xl font-black">Koleksi produk</h2><p class="mt-1 text-sm text-slate-500">Satu card untuk satu produk. Warna dan size tergabung di dalamnya.</p></div><div class="flex gap-2"><button id="cartButton" class="hidden rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white">Keranjang <span id="cartCount">0</span></button><button id="addProductButton" class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white shadow-lg shadow-blue-600/20">+ Tambah produk</button></div></div>
+          <div class="flex flex-col gap-3 sm:flex-row"><label class="flex flex-1 items-center gap-2 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100"><span class="text-slate-400">⌕</span><input id="stockSearch" class="w-full bg-transparent text-sm outline-none" placeholder="Cari produk, warna, atau size" /></label><div class="flex rounded-2xl bg-slate-200/70 p-1"><button data-stock-mode="warehouse" class="stock-mode flex-1 rounded-xl px-4 py-2.5 text-sm font-bold">Gudang</button><button data-stock-mode="sale" class="stock-mode flex-1 rounded-xl px-4 py-2.5 text-sm font-bold">Stok jual</button></div></div>
+          <p id="stockSummary" class="text-sm text-slate-500"></p>
+          <div id="stockCards" class="grid gap-4 sm:grid-cols-2 xl:grid-cols-3"></div>
         </section>
+
         <section id="transactionPage" class="page hidden space-y-5">
           <div><h2 class="text-2xl font-black">Input transaksi</h2><p class="mt-1 text-sm text-slate-500">Pilih produk, warna, lalu size dari stok jual.</p></div>
           <div class="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-            <section class="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between"><div><h3 class="font-extrabold">1. Pilih produk</h3><p class="mt-1 text-sm text-slate-400">Hanya stok siap jual.</p></div><button type="button" id="resetTransactionButton" class="text-sm font-bold text-blue-600">Reset</button></div><div id="transactionCatalog" class="mt-5 grid gap-3 sm:grid-cols-2"></div><div id="transactionSelection" class="mt-5"></div></section>
+            <section class="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100"><div class="flex items-center justify-between"><div><h3 class="font-extrabold">1. Pilih produk</h3><p class="mt-1 text-sm text-slate-400">Hanya stok siap jual.</p></div><button id="resetTransactionButton" class="text-sm font-bold text-blue-600">Reset</button></div><div id="transactionCatalog" class="mt-5 grid gap-3 sm:grid-cols-2"></div><div id="transactionSelection" class="mt-5"></div></section>
             <form id="transactionForm" class="h-fit rounded-3xl bg-slate-950 p-6 text-white"><p class="text-sm font-medium text-slate-400">2. Buat transaksi</p><h3 id="selectedVariantName" class="mt-2 text-xl font-extrabold">Pilih produk dulu</h3><div id="priceRange" class="mt-5 rounded-2xl bg-white/10 p-4 text-sm text-slate-300">Pilih warna dan size untuk melihat harga.</div><div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-1"><label class="text-sm font-bold">Jumlah<input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label><label class="text-sm font-bold">Harga jual / unit<input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" /></label></div><div class="mt-5 flex items-center justify-between border-y border-white/10 py-4"><span class="text-sm text-slate-400">Total transaksi</span><strong id="transactionTotal" class="text-2xl font-black">Rp0</strong></div><button id="saveTransactionButton" disabled class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white disabled:bg-white/20">Simpan transaksi</button></form>
           </div>
         </section>
@@ -85,16 +60,9 @@
       </div>
     </main>
 
-    <nav id="mobileNav" class="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-100 bg-white px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_30px_rgba(15,23,42,.06)] lg:hidden">
-      <button data-page="dashboard" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-blue-600"><span class="grid size-9 place-items-center rounded-xl bg-blue-50 text-base">⌂</span>Home</button>
-      <button data-page="stock" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-slate-500"><span class="grid size-9 place-items-center rounded-xl text-base">▦</span>Stok</button>
-      <button data-page="transaction" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-slate-500"><span class="grid size-9 place-items-center rounded-xl text-base">＋</span>Transaksi</button>
-      <button data-page="history" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold text-slate-500"><span class="grid size-9 place-items-center rounded-xl text-base">◷</span>History</button>
-    </nav>
+    <nav id="mobileNav" class="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-100 bg-white px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_30px_rgba(15,23,42,.06)] lg:hidden"></nav>
 
     <div id="productModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5"><div class="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-4xl sm:rounded-3xl sm:p-6"><div class="flex items-start justify-between gap-4"><div><p class="text-xs font-black tracking-widest text-blue-600">PRODUK BARU</p><h2 class="mt-1 text-xl font-black">Tambah produk & stok awal</h2><p class="mt-1 text-sm text-slate-500">Satu gambar utama untuk produk. Warna cukup dipilih, dan bisa custom.</p></div><button data-close="productModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><form id="productForm" class="mt-6"><div class="grid gap-4 sm:grid-cols-2"><label class="text-sm font-bold text-slate-700">Merek<input id="productName" required placeholder="Contoh: Adidas" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Seri<input id="productModel" required placeholder="Contoh: Warzawa" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label></div><label class="mt-4 block text-sm font-bold text-slate-700">Gambar utama produk<input id="productImage" type="file" accept="image/jpeg,image/png,image/webp" required class="mt-2 block w-full rounded-xl border border-slate-200 p-2 text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-blue-50 file:px-2 file:py-1.5 file:font-bold file:text-blue-700" /></label><div class="mt-6 flex items-center justify-between"><div><h3 class="font-extrabold">Seri warna</h3><p class="mt-1 text-xs text-slate-500">Tambah semua warna produk sekaligus.</p></div><button id="addColorButton" type="button" class="rounded-xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">+ Warna</button></div><div id="colorGroups" class="mt-4 space-y-4"></div><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="productModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan produk</button></div></form></div></div>
-
-    <div id="productEditModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5"><div class="max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6"><div class="flex items-start justify-between gap-4"><div><p class="text-xs font-black tracking-widest text-blue-600">EDIT PRODUK</p><h2 class="mt-1 text-xl font-black">Ubah informasi produk</h2><p class="mt-1 text-sm text-slate-500">Warna dan size dikelola terpisah dari informasi utama produk.</p></div><button data-close="productEditModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><form id="productEditForm" class="mt-6"><input id="editingProductId" type="hidden" /><label class="text-sm font-bold text-slate-700">Merek<input id="editProductName" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="mt-4 block text-sm font-bold text-slate-700">Seri<input id="editProductModel" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="mt-4 block text-sm font-bold text-slate-700">Ganti gambar utama <span class="font-normal text-slate-400">(opsional)</span><input id="editProductImage" type="file" accept="image/jpeg,image/png,image/webp" class="mt-2 block w-full rounded-xl border border-slate-200 p-2 text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-blue-50 file:px-2 file:py-1.5 file:font-bold file:text-blue-700" /></label><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="productEditModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan perubahan</button></div></form></div></div>
 
     <div id="variantModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5"><div class="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6"><div class="flex items-start justify-between"><div><p class="text-xs font-black tracking-widest text-blue-600">UPDATE UNIT</p><h2 id="variantModalTitle" class="mt-1 text-xl font-black">Tambah warna / size</h2></div><button data-close="variantModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><form id="variantForm" class="mt-6"><input id="editingVariantId" type="hidden" /><label class="text-sm font-bold text-slate-700">Produk<select id="variantProduct" required class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500"></select></label><div class="mt-4">
           <label class="text-sm font-bold text-slate-700">Warna</label>
@@ -102,9 +70,9 @@
           <input id="variantColor" type="hidden" required />
           <input id="variantColorHex" type="hidden" />
           <div id="variantCustomSlot"></div>
-        </div><label class="mt-4 block text-sm font-bold text-slate-700">Size<input id="variantSize" required placeholder="Contoh: 40 / 41 / L" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="text-sm font-bold text-slate-700">Stok gudang<input id="variantWarehouseQty" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">HPP / modal<input id="variantHpp" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga normal<input id="variantNormalPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga minimum<input id="variantMinimumPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label></div><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="variantModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan</button></div></form></div></div>
+        </div><div class="mt-4 grid gap-4 sm:grid-cols-2"><label class="text-sm font-bold text-slate-700">Stok gudang<input id="variantWarehouseQty" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">HPP / modal<input id="variantHpp" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga normal<input id="variantNormalPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold text-slate-700">Harga minimum<input id="variantMinimumPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label></div><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="variantModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan</button></div></form></div></div>
 
-    <div id="transferModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5"><div class="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"><div class="flex items-start justify-between"><div><p class="text-xs font-black tracking-widest text-blue-600">PINDAH STOK</p><h2 class="mt-1 text-xl font-black">Gudang ke stok jual</h2></div><button data-close="transferModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><form id="transferForm" class="mt-6"><div class="rounded-2xl bg-slate-50 p-4"><p id="transferProductLabel" class="font-black text-slate-900"></p><p id="transferAvailable" class="mt-1 text-xs text-slate-400"></p></div><label class="mt-4 block text-sm font-bold text-slate-700">Pilih varian<select id="transferVariant" required class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500"></select></label><label class="mt-4 block text-sm font-bold text-slate-700">Jumlah dipindahkan<input id="transferQty" type="number" min="1" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="transferModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Pindahkan</button></div></form></div></div>
+    <div id="transferModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5"><div class="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6"><div class="flex items-start justify-between"><div><p class="text-xs font-black tracking-widest text-blue-600">PINDAH STOK</p><h2 class="mt-1 text-xl font-black">Gudang ke stok jual</h2></div><button data-close="transferModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><form id="transferForm" class="mt-6"><label class="text-sm font-bold text-slate-700">Pilih varian<select id="transferVariant" required class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500"></select></label><label class="mt-4 block text-sm font-bold text-slate-700">Jumlah dipindahkan<input id="transferQty" type="number" min="1" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" /></label><div class="mt-6 flex justify-end gap-2"><button type="button" data-close="transferModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button><button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Pindahkan</button></div></form></div></div>
 
     <div id="salesSheet" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-stretch sm:justify-end"><section class="max-h-[90vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:h-full sm:max-h-none sm:w-[440px] sm:rounded-none sm:rounded-l-3xl sm:p-6"><div id="salesSheetContent"></div></section></div>
 
@@ -113,15 +81,16 @@
 
     <script>
       // ===== 1. KONFIGURASI & STATE =====
-      const API_BASE = window.INVENTORY_API_BASE || (window.location.protocol === "file:" ? "http://127.0.0.1:8000" : window.location.origin);
-      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", detailProductId: null, detailColorId: null, transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], historyDate: new Date().toISOString().slice(0, 10) };
+      const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
+        ? `http://${window.location.hostname}:8000`
+        : window.location.origin;
+      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], historyDate: new Date().toISOString().slice(0, 10) };
       const $ = (id) => document.getElementById(id);
       const rupiah = (value) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
       const dateTime = (value) => new Date(value).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
       const escapeHtml = (value) => String(value ?? "").replace(/[&<>"']/g, (char) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[char]));
       const photoUrl = (item) => item.image_url?.startsWith("http") ? item.image_url : `${API_BASE}${item.image_url || ""}`;
       const emptyState = (message) => `<div class="rounded-3xl bg-white p-8 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-100">${message}</div>`;
-      const sameId = (a, b) => String(a ?? "") === String(b ?? "");
 
       async function request(path, options = {}) {
         const response = await fetch(`${API_BASE}${path}`, options);
@@ -169,20 +138,22 @@
       function customColorEditor(name="", hex="#94a3b8") { return `<div class="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3"><div class="grid gap-3 sm:grid-cols-[1fr_auto]"><label class="text-xs font-bold text-slate-600">Nama warna<input data-custom-name value="${escapeHtml(name)}" placeholder="Contoh: Sage, Maroon, Broken White" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" /></label><label class="text-xs font-bold text-slate-600">Warna<input data-custom-hex type="color" value="${normalizeHex(hex)}" class="mt-1 h-10 w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-1 sm:w-20" /></label></div></div>`; }
       function colorPickerHtml(selected="", selectedHex="") { const active=String(selected||"").toLowerCase(); const custom=selected && !COLOR_PALETTE.some(([n])=>n.toLowerCase()===active); return COLOR_PALETTE.map(([n,hex])=>`<button type="button" data-pick-color="${escapeHtml(n)}" data-pick-hex="${hex}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${n.toLowerCase()===active?"border-blue-600 bg-blue-50 text-blue-700 ring-2 ring-blue-100":"border-slate-200 bg-white text-slate-600"}">${colorDot(n,"size-5",hex)}${escapeHtml(n)}</button>`).join("")+`<button type="button" data-custom-color class="flex items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-xs font-bold ${custom?"border-blue-600 bg-blue-50 text-blue-700":"border-slate-300 bg-white text-slate-600"}"><span class="grid size-5 place-items-center rounded-full border border-slate-300">＋</span>Warna custom</button>`; }
       function groupedColors(product) { const colors=new Map(); product.variants.forEach(v=>{ const key=v.color_id!=null?`id:${v.color_id}`:`name:${String(v.color||"").trim().toLowerCase()}`; if(!colors.has(key)) colors.set(key,{...v,variants:[]}); colors.get(key).variants.push(v); }); return [...colors.values()]; }
-      function productPhoto(item, classes) { return item.image_url ? `<img src="${photoUrl(item)}" alt="${escapeHtml(item.product_name||item.name||"")}" class="${classes}" />` : `<div class="${classes} grid place-items-center bg-slate-100 text-xl font-black text-slate-300">${escapeHtml(item.product_name||item.name||"P").slice(0,1)}</div>`; }
+      function productPhoto(item, classes) { return item.image_url ? `<img src="${photoUrl(item)}" alt="${escapeHtml(item.product_name||item.name||"")}" class="${classes} object-cover" />` : `<div class="${classes} grid place-items-center bg-slate-100 text-xl font-black text-slate-300">${escapeHtml(item.product_name||item.name||"P").slice(0,1)}</div>`; }
 
       function productCard(product, mode) {
         const total = mode === "sale" ? product.saleTotal : product.warehouseTotal;
         const colors = groupedColors(product);
-        const previews = colors.slice(0, 6).map((c, i) => colorDot(c.color, `size-8 ring-2 ring-white ${i ? "-ml-3" : ""}`, c.color_hex)).join("");
-        const sizes = [...new Set(product.variants.map(v => v.size))].slice(0, 5).map(s => `<span class="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-500">${escapeHtml(s)}</span>`).join("");
-        if (mode === "warehouse") return `<article class="overflow-hidden rounded-[1.75rem] bg-white shadow-sm ring-1 ring-slate-100 transition hover:shadow-md"><div class="grid grid-cols-[112px_1fr] gap-0 sm:grid-cols-[180px_1fr]"><div class="flex items-center justify-center bg-slate-50 p-3 sm:p-5"><div class="aspect-square w-full overflow-hidden rounded-2xl bg-white">${productPhoto(product,"h-full w-full object-contain")}</div></div><div class="min-w-0 p-4 sm:p-5"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><p class="text-xs font-bold uppercase tracking-wider text-slate-400">${escapeHtml(product.model)}</p><h3 class="mt-1 truncate text-xl font-black text-slate-950 sm:text-2xl">${escapeHtml(product.product_name)}</h3><p class="mt-1 text-sm font-bold text-slate-700">${total} unit di gudang</p></div><div class="flex max-w-[45%] shrink-0 flex-wrap justify-end gap-1">${previews}</div></div><div class="mt-3 flex flex-wrap gap-1.5">${sizes || '<span class="text-xs text-slate-400">Belum ada size</span>'}</div><div class="mt-4 grid grid-cols-2 gap-2 sm:flex sm:flex-wrap"><button data-open-product="${product.product_id}" class="rounded-xl bg-yellow-400 px-4 py-3 text-sm font-black text-slate-950">Detail</button><button data-edit-product="${product.product_id}" class="rounded-xl border border-slate-200 bg-white px-4 py-3 text-sm font-black text-slate-700">Edit</button><button data-transfer-product="${product.product_id}" class="col-span-2 rounded-xl bg-blue-600 px-4 py-3 text-sm font-black text-white sm:col-span-1">Pindahkan</button></div></div></div></article>`;
-        return `<article class="overflow-hidden rounded-[1.7rem] bg-white shadow-sm ring-1 ring-slate-100"><button data-sell-product="${product.product_id}" class="block w-full text-left"><div class="relative aspect-[16/10] overflow-hidden bg-slate-100">${productPhoto(product,"h-full w-full object-contain")}<span class="absolute left-3 top-3 rounded-full bg-slate-950/85 px-3 py-1.5 text-xs font-bold text-white">${total} unit</span><span class="absolute right-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-700">${colors.length} warna</span></div><div class="p-4"><p class="text-xs font-bold uppercase tracking-wide text-slate-400">${escapeHtml(product.model)}</p><h3 class="mt-1 truncate text-lg font-black">${escapeHtml(product.product_name)}</h3><div class="mt-4 flex items-center pl-3">${previews}</div><div class="mt-4 flex flex-wrap gap-1.5">${sizes}</div></div></button><div class="px-4 pb-4"><button data-sell-product="${product.product_id}" class="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white">Jual</button></div></article>`;
+        const previews = colors.slice(0, 6).map((color, index) => colorDot(color.color, `size-9 ring-2 ring-white ${index ? "-ml-3" : ""}`, color.color_hex)).join("");
+        const sizes = [...new Set(product.variants.map((variant) => variant.size))].slice(0, 5).map((size) => `<span class="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-500">${escapeHtml(size)}</span>`).join("");
+        const cardContent = `<div class="relative aspect-[16/10] overflow-hidden bg-slate-100">${productPhoto(product, "h-full w-full")}<span class="absolute left-3 top-3 rounded-full bg-slate-950/85 px-3 py-1.5 text-xs font-bold text-white">${total} unit</span><span class="absolute right-3 top-3 rounded-full bg-white/95 px-3 py-1.5 text-xs font-bold text-slate-700">${colors.length} warna</span></div><div class="p-4 pb-3"><p class="text-xs font-bold uppercase tracking-wide text-slate-400">${escapeHtml(product.model)}</p><h3 class="mt-1 truncate text-lg font-black">${escapeHtml(product.product_name)}</h3><div class="mt-4 flex items-center justify-between"><div class="flex items-center pl-3">${previews}</div>${mode === "warehouse" ? `<span class="text-sm font-bold text-blue-600">Detail →</span>` : ""}</div><div class="mt-4 flex flex-wrap gap-1.5">${sizes}</div></div>`;
+        const interactiveCard = mode === "warehouse" ? `<button data-open-product="${product.product_id}" class="block w-full text-left">${cardContent}</button>` : cardContent;
+        const action = mode === "sale" ? `<button data-sell-product="${product.product_id}" class="w-full rounded-2xl bg-blue-600 px-4 py-3 text-sm font-bold text-white">Jual</button>` : `<button data-open-product="${product.product_id}" class="w-full rounded-2xl bg-slate-950 px-4 py-3 text-sm font-bold text-white">Kelola stok</button>`;
+        return `<article class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100">${interactiveCard}<div class="px-4 pb-4">${action}</div></article>`;
       }
 
       // ===== 3. RENDER HALAMAN =====
       function renderNavigation() {
-        const items = [["dashboard", "⌂", "Home"], ["stock", "▦", "Stok"], ["transaction", "＋", "Transaksi"], ["history", "◷", "History"]];
+        const items = [["dashboard", "⌂", "Home"], ["stock", "▦", "Stok"], ["history", "◷", "History"]];
         $("desktopNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold ${state.page === page ? "bg-white/12 text-white" : "text-slate-400 hover:bg-white/8 hover:text-white"}"><span class="grid size-7 place-items-center rounded-lg ${state.page === page ? "bg-blue-600" : "bg-white/5"}">${icon}</span>${label}</button>`).join("");
         $("mobileNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold ${state.page === page ? "text-blue-600" : "text-slate-400"}"><span class="grid size-9 place-items-center rounded-xl text-base ${state.page === page ? "bg-blue-50" : ""}">${icon}</span>${label}</button>`).join("");
       }
@@ -193,12 +164,10 @@
         $("warehouseMetric").textContent = `${data.warehouse_qty} Unit`;
         $("saleMetric").textContent = `${data.sale_qty} Unit`;
         $("transactionMetric").textContent = data.transaction_count_today;
-        $("profitMetric").textContent = rupiah(data.profit_today || 0);
-        $("soldQtyMetric").textContent = `${data.sold_qty_today || 0} Unit`;
         $("capitalMetric").textContent = `Modal ${rupiah(data.capital)}`;
         $("dashboardSubtitle").textContent = data.transaction_count_today ? `${data.transaction_count_today} transaksi berhasil dicatat hari ini.` : "Belum ada transaksi tercatat hari ini.";
-        $("recentTransactions").innerHTML = (Array.isArray(data.recent_transactions) ? data.recent_transactions : []).length ? (Array.isArray(data.recent_transactions) ? data.recent_transactions : []).map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p></div><strong class="text-sm">${rupiah(item.total)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
-        $("topProducts").innerHTML = (Array.isArray(data.top_products) ? data.top_products : []).length ? (Array.isArray(data.top_products) ? data.top_products : []).map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${item.sold_qty} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
+        $("recentTransactions").innerHTML = data.recent_transactions.length ? data.recent_transactions.map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p></div><strong class="text-sm">${rupiah(item.total)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
+        $("topProducts").innerHTML = data.top_products.length ? data.top_products.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${item.sold_qty} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("") : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
       }
 
       function renderStock() {
@@ -236,22 +205,22 @@
 
       function renderTransaction() {
         const products = groupedProducts("sale");
-        const selectedProduct = products.find((product) => sameId(product.product_id, state.transactionProductId));
-        $("transactionCatalog").innerHTML = products.length ? products.map((product) => `<button data-transaction-product="${product.product_id}" class="overflow-hidden rounded-2xl border text-left ${sameId(product.product_id, state.transactionProductId) ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-100"}"><div class="flex gap-3 p-3">${productPhoto(product, "size-16 shrink-0 rounded-xl")}<div class="min-w-0"><p class="truncate font-bold">${escapeHtml(product.product_name)}</p><p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(product.model)}</p><p class="mt-2 text-xs font-bold text-blue-600">${product.saleTotal} unit siap jual</p></div></div></button>`).join("") : `<p class="col-span-full rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Belum ada stok jual.</p>`;
+        const selectedProduct = products.find((product) => product.product_id === state.transactionProductId);
+        $("transactionCatalog").innerHTML = products.length ? products.map((product) => `<button data-transaction-product="${product.product_id}" class="overflow-hidden rounded-2xl border text-left ${product.product_id === state.transactionProductId ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-100"}"><div class="flex gap-3 p-3">${productPhoto(product, "size-16 shrink-0 rounded-xl")}<div class="min-w-0"><p class="truncate font-bold">${escapeHtml(product.product_name)}</p><p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(product.model)}</p><p class="mt-2 text-xs font-bold text-blue-600">${product.saleTotal} unit siap jual</p></div></div></button>`).join("") : `<p class="col-span-full rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Belum ada stok jual.</p>`;
         $("transactionSelection").innerHTML = selectedProduct ? transactionSelection(selectedProduct) : "";
         updateTransactionSummary();
       }
 
       function transactionSelection(product) {
         const colors = groupedColors(product);
-        const color = colors.find((item) => sameId(item.color_id, state.transactionColorId)) || colors[0];
+        const color = colors.find((item) => item.color_id === state.transactionColorId) || colors[0];
         if (!state.transactionColorId && color) state.transactionColorId = color.color_id;
         const sizes = color.variants.filter((variant) => variant.sale_qty > 0);
-        return `<div class="rounded-2xl bg-slate-50 p-4"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${sameId(item.color_id, state.transactionColorId) ? "border-blue-600 bg-blue-600 text-white" : "border-white bg-white text-slate-600"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${sameId(variant.id, state.transactionVariantId) ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-slate-400">Warna ini belum punya stok jual.</span>`}</div></div>`;
+        return `<div class="rounded-2xl bg-slate-50 p-4"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${item.color_id === state.transactionColorId ? "border-blue-600 bg-blue-600 text-white" : "border-white bg-white text-slate-600"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${variant.id === state.transactionVariantId ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-slate-400">Warna ini belum punya stok jual.</span>`}</div></div>`;
       }
 
       function updateTransactionSummary() {
-        const variant = state.variants.find((item) => sameId(item.id, state.transactionVariantId));
+        const variant = state.variants.find((item) => item.id === state.transactionVariantId);
         if (!variant) {
           $("selectedVariantName").textContent = "Pilih produk dulu"; $("priceRange").textContent = "Pilih warna dan size untuk melihat harga.";
           [$("transactionQty"), $("transactionPrice"), $("saveTransactionButton")].forEach((element) => element.disabled = true);
@@ -267,7 +236,7 @@
       }
 
       function renderHistory() {
-        const records = (Array.isArray(state.transactions) ? state.transactions : []).filter((item) => String(item.created_at || "").slice(0, 10) === state.historyDate);
+        const records = state.transactions.filter((item) => item.created_at.slice(0, 10) === state.historyDate);
         renderHistoryDates();
         $("historyCards").innerHTML = records.length ? records.map((item) => `<article class="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100">${productPhoto(item, "size-16 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-black">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-sm text-slate-500">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-2 text-xs text-slate-400">${escapeHtml(item.invoice_no)} · ${dateTime(item.created_at)}</p></div><div class="text-right"><p class="font-black">${rupiah(item.total)}</p><p class="mt-1 text-xs text-slate-400">${rupiah(item.unit_price)}/unit</p></div></article>`).join("") : emptyState("Belum ada transaksi pada tanggal ini.");
       }
@@ -275,19 +244,19 @@
       function cartTotal() { return state.cart.reduce((total, item) => total + (item.qty * item.unit_price), 0); }
 
       function openSalesSheet(productId = null, view = "sell") {
-        if (productId) { state.saleProductId = productId; state.saleColorId = null; state.saleVariantId = null; }
+        if (productId) { state.saleProductId = Number(productId); state.saleColorId = null; state.saleVariantId = null; }
         renderSalesSheet(view); showModal("salesSheet");
       }
 
       function renderSalesSheet(view = "sell") {
-        const product = groupedProducts("sale").find((item) => sameId(item.product_id, state.saleProductId));
+        const product = groupedProducts("sale").find((item) => item.product_id === state.saleProductId);
         if (view === "cart" || !product) { renderCartSheet(); return; }
         const colors = groupedColors(product);
-        const activeColor = colors.find((color) => sameId(color.color_id, state.saleColorId)) || colors[0];
+        const activeColor = colors.find((color) => color.color_id === state.saleColorId) || colors[0];
         if (!state.saleColorId && activeColor) state.saleColorId = activeColor.color_id;
         const variants = activeColor.variants.filter((variant) => variant.sale_qty > 0);
-        const variant = variants.find((item) => sameId(item.id, state.saleVariantId));
-        $("salesSheetContent").innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-xs font-black tracking-widest text-blue-600">JUAL PRODUK</p><h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2><p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)}</p></div><div class="flex gap-2"><button data-open-cart class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white">Keranjang ${state.cart.length}</button><button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div></div><div class="mt-6"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((color) => `<button data-sale-color="${color.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${sameId(color.color_id, state.saleColorId) ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">${productPhoto(color, "size-6 rounded-full")} ${escapeHtml(color.color)}</button>`).join("")}</div></div><div class="mt-6"><p class="text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${sameId(item.id, state.saleVariantId) ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}</div></div>${variant ? `<div class="mt-6 rounded-2xl bg-slate-50 p-4"><p class="font-bold">${escapeHtml(variant.color)} · Size ${escapeHtml(variant.size)}</p><p class="mt-1 text-sm text-slate-500">Stok ${variant.sale_qty} · Harga ${rupiah(variant.minimum_price)} — ${rupiah(variant.normal_price)}</p><div class="mt-4 grid gap-3 sm:grid-cols-2"><label class="text-sm font-bold">Jumlah<input id="saleQty" type="number" min="1" max="${variant.sale_qty}" value="1" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold">Harga jual<input id="salePrice" type="number" min="${variant.minimum_price}" max="${variant.normal_price}" value="${variant.normal_price}" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label></div><button data-add-cart class="mt-4 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Masukkan keranjang</button></div>` : `<p class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-400">Pilih size untuk melanjutkan.</p>`}`;
+        const variant = variants.find((item) => item.id === state.saleVariantId);
+        $("salesSheetContent").innerHTML = `<div class="flex items-start justify-between gap-3"><div><p class="text-xs font-black tracking-widest text-blue-600">JUAL PRODUK</p><h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2><p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)}</p></div><div class="flex gap-2"><button data-open-cart class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white">Keranjang ${state.cart.length}</button><button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div></div><div class="mt-6"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((color) => `<button data-sale-color="${color.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${color.color_id === state.saleColorId ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">${productPhoto(color, "size-6 rounded-full")} ${escapeHtml(color.color)}</button>`).join("")}</div></div><div class="mt-6"><p class="text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${item.id === state.saleVariantId ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}</div></div>${variant ? `<div class="mt-6 rounded-2xl bg-slate-50 p-4"><p class="font-bold">${escapeHtml(variant.color)} · Size ${escapeHtml(variant.size)}</p><p class="mt-1 text-sm text-slate-500">Stok ${variant.sale_qty} · Harga ${rupiah(variant.minimum_price)} — ${rupiah(variant.normal_price)}</p><div class="mt-4 grid gap-3 sm:grid-cols-2"><label class="text-sm font-bold">Jumlah<input id="saleQty" type="number" min="1" max="${variant.sale_qty}" value="1" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label><label class="text-sm font-bold">Harga jual<input id="salePrice" type="number" min="${variant.minimum_price}" max="${variant.normal_price}" value="${variant.normal_price}" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" /></label></div><button data-add-cart class="mt-4 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Masukkan keranjang</button></div>` : `<p class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-400">Pilih size untuk melanjutkan.</p>`}`;
       }
 
       function renderCartSheet() {
@@ -295,12 +264,12 @@
       }
 
       function addToCart() {
-        const variant = state.variants.find((item) => sameId(item.id, state.saleVariantId));
+        const variant = state.variants.find((item) => item.id === state.saleVariantId);
         const qty = Number($("saleQty").value);
         const unitPrice = Number($("salePrice").value);
         if (!variant || !qty || qty > variant.sale_qty) return toast("Jumlah melebihi stok jual.", true);
         if (unitPrice < variant.minimum_price || unitPrice > variant.normal_price) return toast("Harga harus berada di rentang yang diizinkan.", true);
-        const existing = state.cart.find((item) => sameId(item.variant_id, variant.id) && item.unit_price === unitPrice);
+        const existing = state.cart.find((item) => item.variant_id === variant.id && item.unit_price === unitPrice);
         if (existing) { if (existing.qty + qty > variant.sale_qty) return toast("Jumlah di keranjang melebihi stok jual.", true); existing.qty += qty; }
         else state.cart.push({ ...variant, variant_id: variant.id, qty, unit_price: unitPrice });
         renderCartButton(); toast("Produk masuk ke keranjang."); renderSalesSheet("cart");
@@ -319,46 +288,16 @@
       }
 
       // ===== 4. DETAIL PRODUK & FORM =====
-      function renderDetail(productId, selectedColorId = null) {
-        const product = groupedProducts("all").find(p => sameId(p.product_id, productId)); if (!product) return;
-        const colors = groupedColors(product);
-        const active = colors.find(c => String(c.color_id) === String(selectedColorId)) || colors[0];
-        const sizes = active?.variants || [];
-        $("detailContent").innerHTML = `<div class="flex items-start gap-3"><button data-close="detailModal" class="grid size-11 shrink-0 place-items-center rounded-full bg-slate-100 text-3xl leading-none text-slate-400">×</button><div class="min-w-0 flex-1"><h2 class="text-3xl font-black leading-none">${escapeHtml(product.product_name)}</h2><p class="mt-1 text-2xl font-medium leading-none text-slate-800">${escapeHtml(product.model)}</p></div><div class="flex shrink-0 gap-2"><button data-edit-product="${product.product_id}" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-black text-slate-700">Edit</button><button data-delete-product="${product.product_id}" class="rounded-xl bg-red-50 px-3 py-2 text-sm font-black text-red-600">Hapus</button></div></div><div class="mt-6 flex min-h-[330px] items-center justify-center bg-white sm:min-h-[430px]">${productPhoto(product,"max-h-[430px] w-full object-contain")}</div><div class="mt-3"><h3 class="text-2xl font-black">Warna</h3><div class="mt-3 flex flex-wrap gap-2">${colors.map(c=>{const count=c.variants.reduce((s,v)=>s+v.warehouse_qty,0);const activeClass=String(c.color_id)===String(active?.color_id)?"border-slate-400 shadow-sm":"border-slate-200";return `<button data-detail-color="${c.color_id}" data-detail-product="${product.product_id}" class="flex items-center gap-2 rounded-full border-2 bg-white px-3 py-2 text-base font-bold text-slate-900 ${activeClass}">${colorDot(c.color,"size-8",c.color_hex)}<span>${escapeHtml(c.color)}</span><span class="grid size-6 place-items-center rounded-full bg-slate-50 text-xs font-black text-slate-500">${count}</span></button>`}).join("")}</div></div><div class="mt-4"><h3 class="text-2xl font-black">Ukuran</h3><div class="mt-3 flex flex-wrap gap-3">${sizes.map(v=>`<div class="flex items-center gap-1.5"><button data-edit-variant="${v.id}" class="relative min-w-16 rounded-full border border-slate-200 bg-white px-4 py-3 text-2xl font-medium text-slate-700 shadow-sm">${escapeHtml(v.size)}<span class="absolute -right-1 -top-2 grid size-7 place-items-center rounded-full bg-slate-950 text-[11px] font-black text-white">${v.warehouse_qty}</span></button><button data-transfer-variant="${v.id}" class="rounded-full bg-blue-600 px-3 py-2 text-xs font-black text-white">Pindah</button><button data-delete-variant="${v.id}" class="rounded-full bg-red-50 px-3 py-2 text-xs font-black text-red-600">×</button></div>`).join("") || `<p class="text-sm text-slate-400">Belum ada size untuk warna ini.</p>`}</div></div><button data-add-to-product="${product.product_id}" class="mt-10 w-full rounded-full bg-blue-500 px-5 py-5 text-xl font-black text-white shadow-lg shadow-blue-500/20">Tambah warna / Size</button>`;
-      }
-      function openDetail(productId) { state.detailProductId=productId; state.detailColorId=null; renderDetail(productId); showModal("detailModal"); }
-
-      function openProductEditModal(productId) {
-        const product = groupedProducts("all").find((p) => sameId(p.product_id, productId));
-        const base = state.products.find((p) => String(p.id) === String(productId));
-        if (!product && !base) return toast("Produk tidak ditemukan.", true);
-        const source = product || { product_id: base.id, product_name: base.name, model: base.model };
-        $("editingProductId").value = source.product_id;
-        $("editProductName").value = source.product_name || source.name || "";
-        $("editProductModel").value = source.model || "";
-        $("editProductImage").value = "";
-        showModal("productEditModal");
-      }
-
-      function openTransferModal(productIdOrVariantId, isVariant = false) {
-        const productId = isVariant ? state.variants.find(v => sameId(v.id, productIdOrVariantId))?.product_id : productIdOrVariantId;
-        const warehouseVariants = state.variants.filter(v => sameId(v.product_id, productId) && v.warehouse_qty > 0);
-        if (!warehouseVariants.length) return toast("Produk ini tidak punya stok gudang yang bisa dipindahkan.", true);
-        $("transferVariant").innerHTML = warehouseVariants.map(v => `<option value="${v.id}">${escapeHtml(v.color)} · Size ${escapeHtml(v.size)} · ${v.warehouse_qty} unit</option>`).join("");
-        const selected = isVariant ? warehouseVariants.find(v => String(v.id) === String(productIdOrVariantId)) : warehouseVariants[0];
-        if (!selected) return toast("Varian ini tidak memiliki stok gudang yang bisa dipindahkan.", true);
-        $("transferVariant").value = String(selected.id);
-        $("transferQty").value = "1";
-        $("transferQty").max = selected.warehouse_qty;
-        const product = selected;
-        $("transferProductLabel").textContent = `${product.product_name} · ${product.model}`;
-        $("transferAvailable").textContent = `Stok tersedia: ${product.warehouse_qty} unit`;
-        showModal("transferModal");
+      function openDetail(productId) {
+        const product=groupedProducts("all").find(p=>p.product_id===Number(productId)); if(!product)return;
+        const colors=groupedColors(product);
+        $("detailContent").innerHTML=`<div class="flex items-start justify-between gap-4"><div><p class="text-xs font-black tracking-widest text-blue-600">KELOLA STOK GUDANG</p><h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2><p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)} · ${colors.length} warna</p></div><button data-close="detailModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button></div><div class="mt-5 overflow-hidden rounded-3xl border border-slate-100 bg-white"><div class="aspect-[16/8] bg-slate-100">${productPhoto(product,"h-full w-full")}</div></div><div class="mt-5 space-y-3">${colors.map(c=>`<section class="rounded-3xl border border-slate-100 bg-white p-4"><div class="flex items-center justify-between gap-3"><div class="flex items-center gap-3">${colorDot(c.color,"size-9",c.color_hex)}<div><h3 class="font-black">${escapeHtml(c.color)}</h3><p class="text-xs text-slate-400">${c.variants.length} size · ${c.variants.reduce((s,v)=>s+v.warehouse_qty,0)} unit gudang</p></div></div><button data-add-color-size="${c.color_id}" data-product-id="${product.product_id}" class="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">+ Size</button></div><div class="mt-4 space-y-2">${c.variants.map(v=>`<div class="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2"><div><p class="font-bold">Size ${escapeHtml(v.size)}</p><p class="text-xs text-slate-400">Gudang ${v.warehouse_qty} · Jual ${v.sale_qty}</p><p class="mt-1 text-xs font-bold text-slate-500">HPP ${rupiah(v.hpp)} · Normal ${rupiah(v.normal_price)}</p></div><div class="flex gap-1"><button data-edit-variant="${v.id}" class="rounded-xl bg-white px-2 py-1.5 text-xs font-bold text-blue-600 ring-1 ring-slate-200">Edit</button><button data-transfer-variant="${v.id}" class="rounded-xl bg-blue-600 px-2 py-1.5 text-xs font-bold text-white">Pindah</button><button data-delete-variant="${v.id}" class="rounded-xl bg-rose-50 px-2 py-1.5 text-xs font-bold text-rose-600">Hapus</button></div></div>`).join("")}</div></section>`).join("")}</div><div class="mt-5 flex gap-2"><button data-delete-product="${product.product_id}" class="rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold text-rose-600">Hapus produk</button><button data-add-to-product="${product.product_id}" class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Tambah warna / size</button>`;
+        showModal("detailModal");
       }
 
       function openVariantModal(variant=null, productId="", colorName="", initialHex="") {
         $("variantForm").reset(); $("editingVariantId").value=variant?.id||"";
-        $("variantProduct").innerHTML=state.products.map(p=>`<option value="${p.id}" ${String(productId||variant?.product_id)===String(p.id)?"selected":""}>${escapeHtml(p.name)} · ${escapeHtml(p.model)}</option>`).join("");
+        $("variantProduct").innerHTML=state.products.map(p=>`<option value="${p.id}" ${Number(productId||variant?.product_id)===p.id?"selected":""}>${escapeHtml(p.name)} · ${escapeHtml(p.model)}</option>`).join("");
         const cName=colorName||variant?.color||""; const cHex=initialHex||variant?.color_hex||colorHex(cName);
         $("variantColorPicker").innerHTML=colorPickerHtml(cName,cHex); $("variantColor").value=cName; $("variantColorHex").value=variant?.color_hex||cHex;
         $("variantCustomSlot").innerHTML=(cName && !COLOR_PALETTE.some(([n])=>n.toLowerCase()===cName.toLowerCase()))?customColorEditor(cName,cHex):"";
@@ -373,63 +312,81 @@
 
       // ===== 5. LOAD DATA & INTERAKSI =====
       async function loadAll() {
-        // Navigasi tidak boleh bergantung pada API. Render dulu agar aplikasi tetap bisa dipakai.
-        renderNavigation();
-        const [dashboard, products, variants, transactions] = await Promise.all([
-          request("/api/dashboard"), request("/api/products"), request("/api/variants"), request("/api/transactions")
-        ]);
-        state.dashboard = dashboard || {};
-        state.products = Array.isArray(products) ? products : (products?.items || products?.products || []);
-        state.variants = Array.isArray(variants) ? variants : (variants?.items || variants?.variants || []);
-        state.transactions = Array.isArray(transactions) ? transactions : (transactions?.items || transactions?.transactions || []);
-        renderDashboard();
-        renderStock();
-        renderTransaction();
-        renderHistory();
-        renderNavigation();
+        const [dashboard, products, variants, transactions] = await Promise.all([request("/api/dashboard"), request("/api/products"), request("/api/variants"), request("/api/transactions")]);
+        state.dashboard = dashboard; state.products = products; state.variants = variants; state.transactions = transactions;
+        renderDashboard(); renderStock(); renderTransaction(); renderHistory(); renderNavigation();
       }
 
       function switchPage(page) {
-        const titles = { dashboard: "Dashboard", stock: "Stok", transaction: "Transaksi", history: "History Transaksi" };
-        if (!titles[page]) page = "dashboard";
         state.page = page;
         document.querySelectorAll(".page").forEach((section) => section.classList.toggle("hidden", section.id !== `${page}Page`));
-        $("pageTitle").textContent = titles[page];
-        renderNavigation();
-        window.scrollTo({ top: 0, behavior: "smooth" });
+        $("pageTitle").textContent = ({ dashboard: "Dashboard", stock: "Stok", transaction: "Transaksi", history: "History Transaksi" })[page];
+        renderNavigation(); window.scrollTo({ top: 0, behavior: "smooth" });
       }
 
-      document.addEventListener("click", async (event) => {
+      document.addEventListener("click", (event) => {
         const page = event.target.closest("[data-page]")?.dataset.page; if (page) switchPage(page);
         const go = event.target.closest("[data-go]")?.dataset.go; if (go) switchPage(go);
         const close = event.target.closest("[data-close]")?.dataset.close; if (close) hideModal(close);
         const mode = event.target.closest("[data-stock-mode]")?.dataset.stockMode; if (mode) { state.stockMode = mode; renderStock(); }
-        const detailColor = event.target.closest("[data-detail-color]"); if (detailColor) { state.detailColorId=detailColor.dataset.detailColor; renderDetail(detailColor.dataset.detailProduct, state.detailColorId); return; }
-        const editProduct = event.target.closest("[data-edit-product]")?.dataset.editProduct; if (editProduct) { hideModal("detailModal"); openProductEditModal(editProduct); return; }
         const product = event.target.closest("[data-open-product]")?.dataset.openProduct; if (product) openDetail(product);
-        const transferProduct = event.target.closest("[data-transfer-product]")?.dataset.transferProduct; if (transferProduct) { openTransferModal(transferProduct); return; }
         const sellProduct = event.target.closest("[data-sell-product]")?.dataset.sellProduct; if (sellProduct) openSalesSheet(sellProduct);
-        const saleColor = event.target.closest("[data-sale-color]")?.dataset.saleColor; if (saleColor) { state.saleColorId = saleColor; state.saleVariantId = null; renderSalesSheet(); }
-        const saleVariant = event.target.closest("[data-sale-variant]")?.dataset.saleVariant; if (saleVariant) { state.saleVariantId = saleVariant; renderSalesSheet(); }
+        const saleColor = event.target.closest("[data-sale-color]")?.dataset.saleColor; if (saleColor) { state.saleColorId = Number(saleColor); state.saleVariantId = null; renderSalesSheet(); }
+        const saleVariant = event.target.closest("[data-sale-variant]")?.dataset.saleVariant; if (saleVariant) { state.saleVariantId = Number(saleVariant); renderSalesSheet(); }
         if (event.target.closest("[data-add-cart]")) addToCart();
         if (event.target.closest("[data-open-cart]")) renderSalesSheet("cart");
-        const removeCart = event.target.closest("[data-remove-cart]")?.dataset.removeCart; if (removeCart) { state.cart = state.cart.filter((item) => !sameId(item.variant_id, removeCart)); renderCartButton(); renderSalesSheet("cart"); }
+        const removeCart = event.target.closest("[data-remove-cart]")?.dataset.removeCart; if (removeCart) { state.cart = state.cart.filter((item) => item.variant_id !== Number(removeCart)); renderCartButton(); renderSalesSheet("cart"); }
         if (event.target.closest("[data-checkout-cart]")) checkoutCart();
         const historyDate = event.target.closest("[data-history-date]")?.dataset.historyDate; if (historyDate) { state.historyDate = historyDate; renderHistory(); }
         if (event.target.closest("#customDateButton")) { const input = $("customHistoryDate"); input.showPicker ? input.showPicker() : input.click(); }
         const transactionProduct = event.target.closest("[data-transaction-product]")?.dataset.transactionProduct;
-        if (transactionProduct) { state.transactionProductId = transactionProduct; state.transactionColorId = null; state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
+        if (transactionProduct) { state.transactionProductId = Number(transactionProduct); state.transactionColorId = null; state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
         const transactionColor = event.target.closest("[data-transaction-color]")?.dataset.transactionColor;
-        if (transactionColor) { state.transactionColorId = transactionColor; state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
+        if (transactionColor) { state.transactionColorId = Number(transactionColor); state.transactionVariantId = null; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
         const transactionVariant = event.target.closest("[data-transaction-variant]")?.dataset.transactionVariant;
-        if (transactionVariant) { state.transactionVariantId = transactionVariant; $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
-        const edit = event.target.closest("[data-edit-variant]")?.dataset.editVariant; if (edit) { hideModal("detailModal"); openVariantModal(state.variants.find((variant) => String(variant.id) === String(edit))); }
-        const add = event.target.closest("[data-add-to-product]")?.dataset.addToProduct; if (add) { hideModal("detailModal"); openVariantModal(null, add); }
-        const addColor = event.target.closest("[data-add-color-size]"); if (addColor) { const v=state.variants.find(x=>String(x.product_id)===String(addColor.dataset.productId) && String(x.color_id)===String(addColor.dataset.addColorSize)); hideModal("detailModal"); openVariantModal(null, addColor.dataset.productId, v?.color||"", v?.color_hex||""); }
-        const transfer = event.target.closest("[data-transfer-variant]")?.dataset.transferVariant; if (transfer) { hideModal("detailModal"); openTransferModal(transfer, true); }
-        const deleteVariantId = event.target.closest("[data-delete-variant]")?.dataset.deleteVariant; if (deleteVariantId) { if(!confirm("Hapus varian ini? Tindakan tidak bisa dibatalkan.")) return; try { await request(`/api/variants/${deleteVariantId}`, {method:"DELETE"}); toast("Varian berhasil dihapus."); await loadAll(); renderDetail(state.detailProductId); } catch(error){ toast(error.message,true); } return; }
-        const deleteProductId = event.target.closest("[data-delete-product]")?.dataset.deleteProduct; if (deleteProductId) { if(!confirm("Hapus produk beserta semua variannya?")) return; try { await request(`/api/products/${deleteProductId}`, {method:"DELETE"}); hideModal("detailModal"); toast("Produk berhasil dihapus."); await loadAll(); switchPage("stock"); } catch(error){ toast(error.message,true); } return; }
+        if (transactionVariant) { state.transactionVariantId = Number(transactionVariant); $("transactionQty").value = ""; $("transactionPrice").value = ""; renderTransaction(); }
+        const edit = event.target.closest("[data-edit-variant]")?.dataset.editVariant; if (edit) { hideModal("detailModal"); openVariantModal(state.variants.find((variant) => variant.id === Number(edit))); }
+        const add = event.target.closest("[data-add-to-product]")?.dataset.addToProduct; if (add) { hideModal("detailModal"); openVariantModal(null, Number(add)); }
+        const addColor = event.target.closest("[data-add-color-size]"); if (addColor) { const v=state.variants.find(x=>x.product_id===Number(addColor.dataset.productId) && x.color_id===Number(addColor.dataset.addColorSize)); hideModal("detailModal"); openVariantModal(null, Number(addColor.dataset.productId), v?.color||"", v?.color_hex||""); }
+        const transfer = event.target.closest("[data-transfer-variant]")?.dataset.transferVariant; if (transfer) { hideModal("detailModal"); openTransferModal(Number(transfer)); }
+        const deleteVariant = event.target.closest("[data-delete-variant]")?.dataset.deleteVariant; 
+        if (deleteVariant) { 
+          if (confirm("Hapus varian ini? Stok jual akan hilang.")) {
+            try {
+              await request(`/api/variants/${deleteVariant}`, { method: "DELETE" });
+              hideModal("detailModal");
+              toast("Varian dihapus"); 
+              await loadAll();
+            } catch (error) { toast(error.message, true); }
+          }
+        }
+        const deleteProduct = event.target.closest("[data-delete-product]")?.dataset.deleteProduct; 
+        if (deleteProduct) { 
+          if (confirm("Hapus produk ini dan semua varian-nya? Tindakan tidak bisa dibatalkan.")) {
+            try {
+              await request(`/api/products/${deleteProduct}`, { method: "DELETE" });
+              hideModal("detailModal");
+              toast("Produk dihapus"); 
+              await loadAll(); 
+              switchPage("stock");
+            } catch (error) { toast(error.message, true); }
+          }
+        }
       });
+
+      function openTransferModal(variantId) {
+        const variant = state.variants.find(v => v.id === variantId);
+        if (!variant) { toast("Varian tidak ditemukan", true); return; }
+        
+        // Populate dropdown dengan semua varian produk ini
+        const productVariants = state.variants.filter(v => v.product_id === variant.product_id && v.warehouse_qty > 0);
+        $("transferVariant").innerHTML = productVariants.map(v => 
+          `<option value="${v.id}" ${v.id === variantId ? "selected" : ""}>${v.color} - Size ${v.size} (${v.warehouse_qty} unit)</option>`
+        ).join("");
+        
+        $("transferQty").value = ""; 
+        showModal("transferModal");
+      }
 
       $("addProductButton").addEventListener("click", () => { $("productForm").reset(); resetColorGroups(); showModal("productModal"); });
       $("addColorButton").addEventListener("click", () => $("colorGroups").insertAdjacentHTML("beforeend", colorGroup()));
@@ -438,7 +395,6 @@
       $("transactionQty").addEventListener("input", updateTransactionSummary);
       $("transactionPrice").addEventListener("input", updateTransactionSummary);
       $("customHistoryDate").addEventListener("change", (event) => { if (event.target.value) { state.historyDate = event.target.value; renderHistory(); } });
-      $("resetTransactionButton").addEventListener("click", () => { state.transactionProductId = null; state.transactionColorId = null; state.transactionVariantId = null; $("transactionForm").reset(); renderTransaction(); });
 
       $("colorGroups").addEventListener("click", (event)=>{
         const group=event.target.closest(".color-group"); if(!group)return;
@@ -453,40 +409,21 @@
       $("variantColorPicker").addEventListener("click",e=>{const p=e.target.closest("[data-pick-color]");if(p){$("variantColor").value=p.dataset.pickColor;$("variantColorHex").value=p.dataset.pickHex;$("variantCustomSlot").innerHTML="";$("variantColorPicker").innerHTML=colorPickerHtml(p.dataset.pickColor,p.dataset.pickHex);}else if(e.target.closest("[data-custom-color]"))$("variantCustomSlot").innerHTML=customColorEditor($("variantColor").value,$("variantColorHex").value||"#94a3b8");});
       $("variantCustomSlot").addEventListener("input",e=>{if(e.target.matches("[data-custom-name]"))$("variantColor").value=e.target.value.trim();if(e.target.matches("[data-custom-hex]"))$("variantColorHex").value=e.target.value;});
 
-      $("productEditForm").addEventListener("submit", async (event) => {
-        event.preventDefault();
-        const id = $("editingProductId").value;
-        try {
-          const result = await request(`/api/products/${id}`, { method: "PATCH", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ name: $("editProductName").value.trim(), model: $("editProductModel").value.trim() }) });
-          const image = $("editProductImage").files[0];
-          if (image) { const fd = new FormData(); fd.append("image", image); await request(`/api/products/${id}/image`, { method: "POST", body: fd }); }
-          hideModal("productEditModal"); toast(result.message); await loadAll(); openDetail(id);
-        } catch (error) { toast(error.message, true); }
-      });
-
       $("productForm").addEventListener("submit",async(event)=>{
         event.preventDefault(); const colors=collectColors(); const image=$("productImage").files[0];
         if(!image)return toast("Gambar utama produk wajib dipilih.",true); if(colors.some(c=>!c.color))return toast("Pilih warna untuk semua seri.",true); if(colors.some(c=>c.sizes.some(s=>s.minimum_price>s.normal_price)))return toast("Harga minimum tidak boleh melebihi harga normal.",true);
-        let createdProductId=null; try{const result=await request("/api/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:$("productName").value.trim(),model:$("productModel").value.trim(),colors})});createdProductId=result.id;const fd=new FormData();fd.append("image",image);await request(`/api/products/${result.id}/image`,{method:"POST",body:fd});hideModal("productModal");toast(result.message);await loadAll();state.stockMode="warehouse";switchPage("stock");}catch(error){if(createdProductId){try{await request(`/api/products/${createdProductId}`,{method:"DELETE"});}catch(rollbackError){console.error("Rollback produk gagal",rollbackError);}}toast(error.message,true);}
+        try{const result=await request("/api/products",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({name:$("productName").value.trim(),model:$("productModel").value.trim(),colors})});const fd=new FormData();fd.append("image",image);await request(`/api/products/${result.id}/image`,{method:"POST",body:fd});hideModal("productModal");toast(result.message);await loadAll();state.stockMode="warehouse";switchPage("stock");}catch(error){toast(error.message,true);}
       });
 
       $("variantForm").addEventListener("submit",async(event)=>{
-        event.preventDefault(); const id=$("editingVariantId").value; const payload={product_id:$("variantProduct").value,color:$("variantColor").value.trim(),color_hex:$("variantColorHex").value.trim()||null,size:$("variantSize").value.trim(),warehouse_qty:Number($("variantWarehouseQty").value),hpp:Number($("variantHpp").value),normal_price:Number($("variantNormalPrice").value),minimum_price:Number($("variantMinimumPrice").value)};
-        if(!payload.color)return toast("Pilih atau buat warna custom terlebih dahulu.",true); try{const result=await request(id?`/api/variants/${id}`:"/api/variants",{method:id?"PATCH":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});hideModal("variantModal");toast(result.message);await loadAll();}catch(error){toast(error.message,true);}
-      });
-
-      $("transferVariant").addEventListener("change", () => {
-        const variant = state.variants.find(v => String(v.id) === String($("transferVariant").value));
-        if (!variant) return;
-        $("transferQty").max = variant.warehouse_qty;
-        $("transferQty").value = Math.min(Number($("transferQty").value || 1), variant.warehouse_qty);
-        $("transferAvailable").textContent = `Stok tersedia: ${variant.warehouse_qty} unit`;
+        event.preventDefault(); const id=$("editingVariantId").value; const payload={product_id:Number($("variantProduct").value),color:$("variantColor").value.trim(),color_hex:$("variantColorHex").value.trim()||null,size:$("variantSize").value.trim(),warehouse_qty:Number($("variantWarehouseQty").value),hpp:Number($("variantHpp").value),normal_price:Number($("variantNormalPrice").value),minimum_price:Number($("variantMinimumPrice").value)};
+        if(!payload.color)return toast("Pilih atau buat warna custom terlebih dahulu.",true); try{const result=await request(id?`/api/variants/${id}`:"/api/variants",{method:id?"PUT":"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});hideModal("variantModal");toast(result.message);await loadAll();}catch(error){toast(error.message,true);}
       });
 
       $("transferForm").addEventListener("submit", async (event) => {
         event.preventDefault();
         try {
-          const result = await request("/api/transfers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variant_id: $("transferVariant").value, qty: Number($("transferQty").value) }) });
+          const result = await request("/api/transfers", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ variant_id: Number($("transferVariant").value), qty: Number($("transferQty").value) }) });
           hideModal("transferModal"); toast(result.message); await loadAll(); state.stockMode = "sale"; switchPage("stock");
         } catch (error) { toast(error.message, true); }
       });
@@ -499,9 +436,7 @@
         } catch (error) { toast(error.message, true); }
       });
 
-      // Render navigasi langsung saat halaman dibuka, lalu muat data di belakang.
-      renderNavigation();
-      loadAll().catch((error) => { console.error(error); toast(error.message, true); });
+      loadAll().catch((error) => toast(error.message, true));
     </script>
   </body>
 </html>
