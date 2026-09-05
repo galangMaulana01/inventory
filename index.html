@@ -22,7 +22,6 @@
       <header class="sticky top-0 z-20 flex items-center justify-between border-b border-slate-100 bg-slate-50/95 px-5 py-4 backdrop-blur lg:px-10">
         <h1 id="pageTitle" class="text-xl font-extrabold">Dashboard</h1>
         <select id="dashboardFilter" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-blue-500">
-          <option value="1h">1 Jam</option>
           <option value="1d" selected>1 Hari</option>
           <option value="7d">7 Hari</option>
           <option value="1m">1 Bulan</option>
@@ -173,7 +172,6 @@
         
         // Filter transactions based on dashboardFilter
         const filterMap = {
-          "1h": 1 / 24,   // 1 hour in days
           "1d": 1,        // 1 day
           "7d": 7,        // 7 days
           "1m": 30,       // 30 days
