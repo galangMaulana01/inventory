@@ -21,6 +21,14 @@
     <main class="min-h-screen pb-24 lg:ml-72 lg:pb-8">
       <header class="sticky top-0 z-20 flex items-center justify-between border-b border-slate-100 bg-slate-50/95 px-5 py-4 backdrop-blur lg:px-10">
         <h1 id="pageTitle" class="text-xl font-extrabold">Dashboard</h1>
+        <select id="dashboardFilter" class="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-blue-500">
+          <option value="1h">1 Jam</option>
+          <option value="1d" selected>1 Hari</option>
+          <option value="7d">7 Hari</option>
+          <option value="1m">1 Bulan</option>
+          <option value="1y">1 Tahun</option>
+          <option value="all">Semua</option>
+        </select>
       </header>
 
       <div class="mx-auto max-w-7xl p-5 lg:p-10">
@@ -85,7 +93,7 @@
       const API_BASE = window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" 
         ? `http://${window.location.hostname}:8000`
         : window.location.origin;
-      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], paymentMethod: "cash", historyDate: new Date().toISOString().slice(0, 10) };
+      const state = { dashboard: null, products: [], variants: [], transactions: [], page: "dashboard", stockMode: "warehouse", transactionProductId: null, transactionColorId: null, transactionVariantId: null, saleProductId: null, saleColorId: null, saleVariantId: null, cart: [], paymentMethod: "cash", historyDate: new Date().toISOString().slice(0, 10), dashboardFilter: "1d" };
       const $ = (id) => document.getElementById(id);
       const rupiah = (value) => new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", maximumFractionDigits: 0 }).format(value || 0);
       const dateTime = (value) => new Date(value).toLocaleString("id-ID", { dateStyle: "medium", timeStyle: "short" });
@@ -162,35 +170,54 @@
 
       function renderDashboard() {
         const data = state.dashboard || {};
-        const transactionCount = Number(data.transaction_count_today ?? data.transactions_today ?? 0);
+        
+        // Filter transactions based on dashboardFilter
+        const filterMap = {
+          "1h": 1 / 24,   // 1 hour in days
+          "1d": 1,        // 1 day
+          "7d": 7,        // 7 days
+          "1m": 30,       // 30 days
+          "1y": 365,      // 365 days
+          "all": null     // all time
+        };
+        const daysBack = filterMap[state.dashboardFilter] ?? 1;
+        const now = new Date();
+        const cutoff = daysBack ? new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000) : null;
+        
+        const filteredTransactions = Array.isArray(state.transactions)
+          ? state.transactions.filter((t) => {
+              const createdAt = new Date(t.created_at);
+              if (Number.isNaN(createdAt.getTime())) return false;
+              if (cutoff && createdAt < cutoff) return false;
+              return true;
+            })
+          : [];
+
+        const transactionCount = filteredTransactions.length;
         const capital = Number(data.capital ?? data.total_capital ?? 0);
 
-        $("revenueMetric").textContent = rupiah(data.revenue_today);
+        // Use dashboard data for metrics (warehouse_qty, sale_qty are current state, not time-filtered)
+        $("revenueMetric").textContent = rupiah(
+          filteredTransactions.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0)
+        );
         $("warehouseMetric").textContent = `${Number(data.warehouse_qty ?? 0)} Unit`;
         $("saleMetric").textContent = `${Number(data.sale_qty ?? 0)} Unit`;
         $("transactionMetric").textContent = transactionCount;
         $("capitalMetric").textContent = `Modal ${rupiah(capital)}`;
         $("dashboardSubtitle").textContent = transactionCount
-          ? `${transactionCount} transaksi berhasil dicatat hari ini.`
-          : "Belum ada transaksi tercatat hari ini.";
+          ? `${transactionCount} transaksi dalam periode terpilih.`
+          : "Belum ada transaksi dalam periode ini.";
 
         // Payment breakdown
-        const today = new Date().toISOString().slice(0, 10);
-        const todayTransactions = Array.isArray(state.transactions)
-          ? state.transactions.filter((t) => {
-              const createdAt = new Date(t.created_at);
-              return !Number.isNaN(createdAt.getTime()) && createdAt.toISOString().slice(0, 10) === today;
-            })
-          : [];
-        const bankTrans = todayTransactions.filter((t) => t.payment_method === "bank");
-        const walletTrans = todayTransactions.filter((t) => t.payment_method === "wallet");
-        const cashTrans = todayTransactions.filter((t) => t.payment_method === "cash");
+        const bankTrans = filteredTransactions.filter((t) => t.payment_method === "bank");
+        const walletTrans = filteredTransactions.filter((t) => t.payment_method === "wallet");
+        const cashTrans = filteredTransactions.filter((t) => t.payment_method === "cash");
         const bankTotal = bankTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
         const walletTotal = walletTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
         const cashTotal = cashTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
 
         $("dashPaymentTotal").textContent = rupiah(bankTotal + walletTotal + cashTotal);
-        $("dashPaymentCount").textContent = `${todayTransactions.length} transaksi`;
+        $("dashPaymentCount").textContent = `${filteredTransactions.length} transaksi`;
         $("dashPaymentBank").textContent = rupiah(bankTotal);
         $("dashPaymentBankCount").textContent = `${bankTrans.length} transaksi`;
         $("dashPaymentWallet").textContent = rupiah(walletTotal);
@@ -200,12 +227,12 @@
 
         // Backend versi sekarang belum selalu mengirim recent_transactions/top_products.
         // Fallback ke [] supaya dashboard tidak crash saat properti tersebut tidak ada.
-        const recentTransactions = Array.isArray(data.recent_transactions) ? data.recent_transactions : todayTransactions;
+        const recentTransactions = Array.isArray(data.recent_transactions) ? data.recent_transactions : filteredTransactions.slice(0, 5);
         const topProducts = Array.isArray(data.top_products) ? data.top_products : [];
 
         $("recentTransactions").innerHTML = recentTransactions.length
           ? recentTransactions.map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${Number(item.qty || 0)} unit</p></div><strong class="text-sm">${rupiah(item.total ?? item.total_price ?? (Number(item.qty || 0) * Number(item.unit_price || 0)))}</strong></article>`).join("")
-          : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi hari ini.</p>`;
+          : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi dalam periode ini.</p>`;
 
         $("topProducts").innerHTML = topProducts.length
           ? topProducts.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0"><span class="grid size-7 shrink-0 place-items-center rounded-full bg-orange-50 text-xs font-black text-orange-600">${index + 1}</span>${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${Number(item.sold_qty || 0)} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("")
@@ -490,6 +517,9 @@
       $("transactionQty").addEventListener("input", updateTransactionSummary);
       $("transactionPrice").addEventListener("input", updateTransactionSummary);
       $("customHistoryDate").addEventListener("change", (event) => { if (event.target.value) { state.historyDate = event.target.value; renderHistory(); } });
+
+      // Dashboard filter
+      $("dashboardFilter").addEventListener("change", (event) => { state.dashboardFilter = event.target.value; renderDashboard(); });
 
       $("colorGroups").addEventListener("click", (event)=>{
         const group=event.target.closest(".color-group"); if(!group)return;
