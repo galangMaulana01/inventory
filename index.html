@@ -191,6 +191,30 @@
         }
       }
 
+      /* Force light mode by default unless explicitly opted in */
+      :root:not([data-theme="dark"]) {
+        --color-background: #FFFFFF;
+        --color-background-canvas: rgba(255, 255, 255, 0.75);
+        --color-background-bone: #F8F8F8;
+        --color-surface: #FFFFFF;
+        --color-surface-card: #FFFFFF;
+        --color-surface-hover: #F4F4F4;
+        --color-surface-active: #EEEEEE;
+        --color-foreground: #171A20;
+        --color-ink: #171A20;
+        --color-body: #393C41;
+        --color-charcoal: #5C5E62;
+        --color-mute: #5C5E62;
+        --color-ash: #8E8E8E;
+        --color-stone: #B0B2B5;
+        --color-on-background: #393C41;
+        --color-on-surface: #393C41;
+        --color-hairline: #EEEEEE;
+        --color-hairline-strong: #D0D1D2;
+        --color-divider: #EEEEEE;
+        --color-divider-dark: #2A2D33;
+      }
+
       /* ---- Tailwind v4 Theme Mapping ---- */
       @theme {
         /* Colors */
@@ -385,6 +409,16 @@
         background-color: var(--color-overlay);
       }
 
+      /* Sheet panel - solid background */
+      .sheet-panel {
+        background-color: var(--color-surface-card) !important;
+      }
+
+      /* Modal panel - solid background */
+      .modal > div[class*="rounded"] {
+        background-color: var(--color-surface-card) !important;
+      }
+
       /* Scrollbar styling */
       * {
         scrollbar-width: thin;
@@ -414,7 +448,7 @@
   </head>
 
   <body class="min-h-screen bg-background font-body text-ink">
-    <aside class="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col bg-surface-deep p-5 text-on-dark lg:flex">
+    <aside class="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col bg-surface-card border-r border-hairline p-5 text-ink lg:flex">
       <nav id="desktopNav" class="mt-10 grid gap-2"></nav>
     </aside>
 
@@ -428,7 +462,7 @@
             <option value="1y">1 Tahun</option>
             <option value="all">Semua</option>
           </select>
-          <button id="cartButton" class="header-action hidden rounded-md bg-surface-deep px-4 py-2.5 text-sm font-medium text-on-dark" data-header-for="stock">
+          <button id="cartButton" class="header-action hidden rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-on-primary" data-header-for="stock">
             Keranjang <span id="cartCount">0</span>
           </button>
           <button id="addProductButton" class="header-action hidden rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-on-primary shadow-lg shadow-primary/20" data-header-for="stock">
@@ -526,16 +560,16 @@
               <div id="transactionSelection" class="mt-5"></div>
             </section>
             
-            <form id="transactionForm" class="h-fit rounded-lg bg-surface-deep p-6 text-on-dark">
+            <form id="transactionForm" class="h-fit rounded-lg bg-surface-card border border-hairline p-6 text-ink">
               <p class="text-sm font-medium text-charcoal">2. Buat transaksi</p>
               <h3 id="selectedVariantName" class="mt-2 text-heading-sm font-medium">Pilih produk dulu</h3>
               <div id="priceRange" class="mt-5 rounded-lg bg-primary-bg/50 p-4 text-sm text-stone">Pilih warna dan size untuk melihat harga.</div>
               <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
                 <label class="text-sm font-medium">Jumlah
-                  <input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-lg border-0 bg-surface-card px-3 py-3 font-medium text-ink outline-none disabled:bg-hairline/50" />
+                  <input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-lg border border-hairline-strong bg-background-bone px-3 py-3 font-medium text-ink outline-none disabled:bg-hairline/50" />
                 </label>
                 <label class="text-sm font-medium">Harga jual / unit
-                  <input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-lg border-0 bg-surface-card px-3 py-3 font-medium text-ink outline-none disabled:bg-hairline/50" />
+                  <input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-lg border border-hairline-strong bg-background-bone px-3 py-3 font-medium text-ink outline-none disabled:bg-hairline/50" />
                 </label>
               </div>
               <div class="mt-5">
@@ -546,7 +580,7 @@
                   <button type="button" data-transaction-payment="wallet" class="rounded-lg px-3 py-3 text-xs font-medium">Wallet</button>
                 </div>
               </div>
-              <div class="mt-5 flex items-center justify-between border-y border-white/10 py-4">
+              <div class="mt-5 flex items-center justify-between border-y border-hairline/20 py-4">
                 <span class="text-sm text-charcoal">Total transaksi</span>
                 <strong id="transactionTotal" class="text-display-sm font-medium">Rp0</strong>
               </div>
@@ -685,7 +719,7 @@
       </div>
     </div>
     
-    <div id="toast" class="pointer-events-none fixed bottom-24 right-5 z-[60] hidden max-w-sm rounded-lg px-4 py-3 text-sm font-medium text-white shadow-level5 lg:bottom-5"></div>
+    <div id="toast" class="pointer-events-none fixed bottom-24 right-5 z-[60] hidden max-w-sm rounded-lg px-4 py-3 text-sm font-medium text-on-primary shadow-level5 lg:bottom-5"></div>
 
     <script>
       // ===== 1. KONFIGURASI & STATE =====
@@ -750,7 +784,7 @@
       function toast(message, error = false) {
         const element = $("toast");
         element.textContent = message;
-        element.className = `pointer-events-none fixed bottom-24 right-5 z-[60] max-w-sm rounded-lg px-4 py-3 text-sm font-medium text-white shadow-level5 lg:bottom-5 ${error ? "bg-danger" : "bg-surface-deep"}`;
+        element.className = `pointer-events-none fixed bottom-24 right-5 z-[60] max-w-sm rounded-lg px-4 py-3 text-sm font-medium text-on-primary shadow-level5 lg:bottom-5 ${error ? "bg-danger" : "bg-primary"}`;
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => element.classList.add("hidden"), 3200);
       }
@@ -852,7 +886,7 @@
               const secondaryTotal = mode === "sale" ? product.warehouseTotal : product.saleTotal;
               const colors = groupedColors(product);
               const previews = colors.slice(0, 3).map((color, index) => colorDot(color.color, `size-6 ring-2 ring-white ${index ? "-ml-2.5" : ""}`, color.color_hex)).join("");
-              const colorOverflow = colors.length > 3 ? `<span class="-ml-1 grid size-6 place-items-center rounded-full bg-surface-deep text-[10px] font-medium text-on-dark ring-2 ring-white">+${colors.length - 3}</span>` : "";
+              const colorOverflow = colors.length > 3 ? `<span class="-ml-1 grid size-6 place-items-center rounded-full bg-primary text-[10px] font-medium text-on-primary ring-2 ring-white">+${colors.length - 3}</span>` : "";
               const sizeList = [...new Set(product.variants.map((variant) => variant.size))];
               const sizes = sizeList.slice(0, 3).map((size) => `<span class="rounded-md bg-hairline px-2 py-1 text-[11px] font-medium text-mute">${escapeHtml(size)}</span>`).join("");
               const sizeOverflow = sizeList.length > 3 ? `<span class="text-xs font-medium text-mute">+${sizeList.length - 3}</span>` : "";
@@ -865,11 +899,16 @@
             }
 
       // ===== 3. RENDER HALAMAN =====
-            function renderNavigation() {
-              const items = [["dashboard", "⌂", "Home"], ["stock", "▦", "Stok"], ["history", "◷", "History"]];
-              $("desktopNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex items-center gap-3 rounded-lg px-4 py-3 text-left text-sm font-medium ${state.page === page ? "bg-primary-bg text-primary" : "text-ash hover:bg-hairline hover:text-ink"}"><span class="grid size-7 place-items-center rounded-md ${state.page === page ? "bg-primary" : "bg-hairline"}">${icon}</span>${label}</button>`).join("");
-              $("mobileNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-xs font-medium ${state.page === page ? "text-primary" : "text-ash"}"><span class="grid size-9 place-items-center rounded-lg text-base ${state.page === page ? "bg-primary-bg" : ""}">${icon}</span>${label}</button>`).join("");
-            }
+      function renderNavigation() {
+        const navIcons = {
+          dashboard: `<svg viewBox="0 0 24 24" class="size-5 fill-none stroke-current stroke-2" aria-hidden="true"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>`,
+          stock: `<svg viewBox="0 0 24 24" class="size-5 fill-none stroke-current stroke-2" aria-hidden="true"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"/><polyline points="3.27 6.96 12 12.01 20.73 6.96"/><line x1="12" y1="22.08" x2="12" y2="12"/></svg>`,
+          history: `<svg viewBox="0 0 24 24" class="size-5 fill-none stroke-current stroke-2" aria-hidden="true"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>`
+        };
+        const items = [["dashboard", "Home"], ["stock", "Stok"], ["history", "History"]];
+        $("desktopNav").innerHTML = items.map(([page, label]) => `<button data-page="${page}" class="flex items-center gap-3 rounded-lg px-4 py-3 text-left text-sm font-medium ${state.page === page ? "bg-primary-bg text-primary" : "text-ash hover:bg-hairline hover:text-ink"}"><span class="grid size-7 place-items-center rounded-md ${state.page === page ? "bg-primary text-on-primary" : "bg-hairline text-ink"}">${navIcons[page]}</span>${label}</button>`).join("");
+        $("mobileNav").innerHTML = items.map(([page, label]) => `<button data-page="${page}" class="flex flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-xs font-medium ${state.page === page ? "text-primary" : "text-ash"}"><span class="grid size-9 place-items-center rounded-lg text-base ${state.page === page ? "bg-primary-bg" : ""}">${navIcons[page]}</span>${label}</button>`).join("");
+      }
       
             function renderDashboard() {
               const data = state.dashboard || {};
@@ -1046,7 +1085,7 @@
       }
 
       function renderHistoryDates() {
-        $("historyDateFilters").innerHTML = `${recentDates().map((date, offset) => `<button data-history-date="${date}" class="shrink-0 rounded-lg px-4 py-2.5 text-sm font-medium ${state.historyDate === date ? "bg-surface-deep text-on-dark" : "bg-surface-card text-charcoal ring-1 ring-hairline"}">${dateLabel(date, offset)}</button>`).join("")}<button id="customDateButton" class="grid shrink-0 size-10 place-items-center rounded-lg bg-surface-card text-charcoal ring-1 ring-hairline" aria-label="Pilih tanggal lain"><svg viewBox="0 0 24 24" class="size-5 fill-none stroke-current" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></button>`;
+        $("historyDateFilters").innerHTML = `${recentDates().map((date, offset) => `<button data-history-date="${date}" class="shrink-0 rounded-lg px-4 py-2.5 text-sm font-medium ${state.historyDate === date ? "bg-primary text-on-primary" : "bg-surface-card text-charcoal ring-1 ring-hairline"}">${dateLabel(date, offset)}</button>`).join("")}<button id="customDateButton" class="grid shrink-0 size-10 place-items-center rounded-lg bg-surface-card text-charcoal ring-1 ring-hairline" aria-label="Pilih tanggal lain"><svg viewBox="0 0 24 24" class="size-5 fill-none stroke-current" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></button>`;
       }
 
       function renderTransaction() {
@@ -1063,7 +1102,7 @@
         const color = colors.find((item) => item.color_id === state.transactionColorId) || colors[0];
         if (!state.transactionColorId && color) state.transactionColorId = color.color_id;
         const sizes = color.variants.filter((variant) => variant.sale_qty > 0);
-        return `<div class="rounded-lg bg-hairline/50 p-4"><p class="text-sm font-medium">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${item.color_id === state.transactionColorId ? "border-primary bg-primary text-on-primary" : "border-hairline bg-surface-card text-charcoal"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-medium">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-lg border px-4 py-2 text-sm font-medium ${variant.id === state.transactionVariantId ? "border-surface-deep bg-surface-deep text-on-dark" : "border-hairline-strong bg-surface-card text-ink"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-mute">Warna ini belum punya stok jual.</span>`}</div></div>`;
+        return `<div class="rounded-lg bg-hairline/50 p-4"><p class="text-sm font-medium">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${item.color_id === state.transactionColorId ? "border-primary bg-primary text-on-primary" : "border-hairline bg-surface-card text-charcoal"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-medium">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-lg border px-4 py-2 text-sm font-medium ${variant.id === state.transactionVariantId ? "border-primary bg-primary text-on-primary" : "border-hairline-strong bg-surface-card text-ink"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-mute">Warna ini belum punya stok jual.</span>`}</div></div>`;
       }
 
       function syncTransactionPaymentUI() {
@@ -1159,7 +1198,7 @@
               <p class="mt-1 text-sm text-mute">${escapeHtml(product.model)}</p>
             </div>
             <div class="flex gap-2">
-              <button data-open-cart class="rounded-lg bg-surface-deep px-3 py-2 text-sm font-medium text-on-dark">Keranjang ${state.cart.length}</button>
+              <button data-open-cart class="rounded-lg bg-primary px-3 py-2 text-sm font-medium text-on-primary">Keranjang ${state.cart.length}</button>
               <button data-close="salesSheet" class="grid size-10 place-items-center rounded-lg bg-hairline text-xl text-ash">×</button>
             </div>
           </div>
@@ -1172,7 +1211,7 @@
           <div class="mt-6">
             <p class="text-sm font-medium">Pilih size</p>
             <div class="mt-3 flex flex-wrap gap-2">
-              ${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-lg border px-4 py-2 text-sm font-medium ${item.id === state.saleVariantId ? "border-surface-deep bg-surface-deep text-on-dark" : "border-hairline-strong bg-surface-card text-ink"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}
+              ${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-lg border px-4 py-2 text-sm font-medium ${item.id === state.saleVariantId ? "border-primary bg-primary text-on-primary" : "border-hairline-strong bg-surface-card text-ink"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}
             </div>
           </div>
           ${variant ? `
