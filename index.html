@@ -3,14 +3,365 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta name="theme-color" content="#2563eb" />
+    <meta name="theme-color" content="#3E6AE1" />
     <title>Stokku — Inventori</title>
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <style>
+      /* ==========================================================================
+         TESLA DESIGN SYSTEM — CSS Custom Properties & Tailwind v4 Theme
+         ========================================================================== */
+      @import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400&display=swap');
+
+      :root {
+        /* ---- Colors (Light) ---- */
+        --color-primary: #3E6AE1;
+        --color-primary-hover: #3560CC;
+        --color-primary-active: #2D55C4;
+        --color-primary-bg: rgba(62, 106, 225, 0.1);
+        --color-secondary: #5C5E62;
+        --color-secondary-hover: #4A4C50;
+        --color-secondary-active: #3D3F42;
+        --color-success: #2B9A66;
+        --color-warning: #F59E0B;
+        --color-danger: #E74C3C;
+        --color-info: #3E6AE1;
+        --color-link: #3E6AE1;
+        --color-ring-focus: rgba(62, 106, 225, 0.5);
+
+        --color-background: #FFFFFF;
+        --color-background-canvas: rgba(255, 255, 255, 0.75);
+        --color-background-bone: #F8F8F8;
+        --color-surface: #FFFFFF;
+        --color-surface-card: #FFFFFF;
+        --color-surface-dark: #171A20;
+        --color-surface-deep: #0D0F13;
+        --color-surface-hover: #F4F4F4;
+        --color-surface-active: #EEEEEE;
+        --color-surface-muted: #F8F8F8;
+
+        --color-foreground: #171A20;
+        --color-ink: #171A20;
+        --color-body: #393C41;
+        --color-charcoal: #5C5E62;
+        --color-mute: #5C5E62;
+        --color-ash: #8E8E8E;
+        --color-stone: #B0B2B5;
+        --color-on-primary: #FFFFFF;
+        --color-on-secondary: #FFFFFF;
+        --color-on-background: #393C41;
+        --color-on-surface: #393C41;
+        --color-on-dark: #FCFCFC;
+        --color-on-dark-mute: rgba(252, 252, 252, 0.72);
+        --color-on-warning: #171A20;
+
+        --color-hairline: #EEEEEE;
+        --color-hairline-strong: #D0D1D2;
+        --color-divider: #EEEEEE;
+        --color-divider-dark: #2A2D33;
+        --color-hero-warm: #3E6AE1;
+        --color-hero-glow: #4A78F0;
+        --color-hero-pink: #7BA3F5;
+        --color-badge-success: #2B9A66;
+        --color-badge-warning: #F59E0B;
+        --color-badge-info: #3E6AE1;
+        --color-overlay: rgba(128, 128, 128, 0.65);
+
+        /* ---- Semantic Light ---- */
+        --color-success-light-bg: rgba(43, 154, 102, 0.1);
+        --color-warning-light-bg: rgba(245, 158, 11, 0.1);
+        --color-danger-light-bg: rgba(231, 76, 60, 0.1);
+        --color-primary-light-bg: rgba(62, 106, 225, 0.1);
+
+        /* ---- Colors (Dark) ---- */
+        --color-dark-background: #0D0F13;
+        --color-dark-background-canvas: rgba(13, 15, 19, 0.9);
+        --color-dark-background-bone: #131519;
+        --color-dark-surface: #1E2127;
+        --color-dark-surface-card: #1E2127;
+        --color-dark-surface-dark: #171A20;
+        --color-dark-surface-deep: #0D0F13;
+        --color-dark-surface-hover: #2A2D33;
+        --color-dark-surface-active: #3A3D43;
+        --color-dark-foreground: #E8E8E8;
+        --color-dark-ink: #E8E8E8;
+        --color-dark-body: #B0B2B5;
+        --color-dark-charcoal: #8E8E8E;
+        --color-dark-mute: #8E8E8E;
+        --color-dark-ash: #5C5E62;
+        --color-dark-stone: #393C41;
+        --color-dark-on-background: #E8E8E8;
+        --color-dark-on-surface: #E8E8E8;
+        --color-dark-hairline: #2A2D33;
+        --color-dark-hairline-strong: #3A3D43;
+        --color-dark-divider: #2A2D33;
+        --color-dark-divider-dark: #3A3D43;
+
+        /* ---- Spacing (8px base unit) ---- */
+        --spacing-xxs: 2px;
+        --spacing-xs: 4px;
+        --spacing-sm: 8px;
+        --spacing-md: 12px;
+        --spacing-lg: 16px;
+        --spacing-xl: 24px;
+        --spacing-xxl: 32px;
+        --spacing-xxxl: 48px;
+        --spacing-section: 96px;
+        --spacing-band: 160px;
+
+        /* ---- Border Radius ---- */
+        --radius-none: 0;
+        --radius-xs: 4px;
+        --radius-sm: 8px;
+        --radius-md: 12px;
+        --radius-lg: 16px;
+        --radius-full: 9999px;
+
+        /* ---- Typography ---- */
+        --font-display: 'Universal Sans Display', -apple-system, Arial, sans-serif;
+        --font-body: 'Universal Sans Text', -apple-system, Arial, sans-serif;
+        --font-mono: 'JetBrains Mono', monospace;
+
+        --text-display-xl: 40px;
+        --text-heading-lg: 28px;
+        --text-display-sm: 22px;
+        --text-heading-sm: 17px;
+        --text-body-md: 14px;
+        --text-body-sm: 14px;
+        --text-button-md: 14px;
+        --text-caption: 12px;
+        --text-code-md: 14px;
+
+        --leading-display-xl: 1.2;
+        --leading-heading-lg: 1.2;
+        --leading-display-sm: 1.0;
+        --leading-heading-sm: 1.2;
+        --leading-body-md: 1.43;
+        --leading-body-sm: 1.43;
+        --leading-button-md: 1.2;
+        --leading-caption: 1.43;
+        --leading-code-md: 1.43;
+
+        --weight-normal: 400;
+        --weight-medium: 500;
+
+        /* ---- Shadows / Elevation ---- */
+        --shadow-level0: none;
+        --shadow-level1: 0 0 0 1px rgba(238, 238, 238, 0.8);
+        --shadow-level2: inset 0 0 0 1px rgba(238, 238, 238, 0.8);
+        --shadow-level3: 0 2px 8px rgba(0, 0, 0, 0.05);
+        --shadow-level4: 0 4px 16px rgba(0, 0, 0, 0.08);
+        --shadow-level5: 0 8px 32px rgba(0, 0, 0, 0.10);
+
+        /* ---- Animation ---- */
+        --duration-fast: 150ms;
+        --duration-normal: 330ms;
+        --duration-slower: 750ms;
+        --easing-default: cubic-bezier(0.22, 0.68, 0, 1);
+        --easing-in-out: cubic-bezier(0.4, 0, 0.2, 1);
+
+        /* ---- Z-Index ---- */
+        --z-dropdown: 100;
+        --z-modal: 500;
+        --z-toast: 600;
+      }
+
+      /* ---- Dark Mode ---- */
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --color-background: var(--color-dark-background);
+          --color-background-canvas: var(--color-dark-background-canvas);
+          --color-background-bone: var(--color-dark-background-bone);
+          --color-surface: var(--color-dark-surface);
+          --color-surface-card: var(--color-dark-surface-card);
+          --color-surface-hover: var(--color-dark-surface-hover);
+          --color-surface-active: var(--color-dark-surface-active);
+          --color-foreground: var(--color-dark-foreground);
+          --color-ink: var(--color-dark-ink);
+          --color-body: var(--color-dark-body);
+          --color-charcoal: var(--color-dark-charcoal);
+          --color-mute: var(--color-dark-mute);
+          --color-ash: var(--color-dark-ash);
+          --color-stone: var(--color-dark-stone);
+          --color-on-background: var(--color-dark-on-background);
+          --color-on-surface: var(--color-dark-on-surface);
+          --color-hairline: var(--color-dark-hairline);
+          --color-hairline-strong: var(--color-dark-hairline-strong);
+          --color-divider: var(--color-dark-divider);
+          --color-divider-dark: var(--color-dark-divider-dark);
+        }
+      }
+
+      /* ---- Tailwind v4 Theme Mapping ---- */
+      @theme {
+        /* Colors */
+        --color-primary: var(--color-primary);
+        --color-primary-hover: var(--color-primary-hover);
+        --color-primary-active: var(--color-primary-active);
+        --color-primary-bg: var(--color-primary-bg);
+        --color-secondary: var(--color-secondary);
+        --color-secondary-hover: var(--color-secondary-hover);
+        --color-secondary-active: var(--color-secondary-active);
+        --color-success: var(--color-success);
+        --color-warning: var(--color-warning);
+        --color-danger: var(--color-danger);
+        --color-info: var(--color-info);
+        --color-link: var(--color-link);
+        --color-ring-focus: var(--color-ring-focus);
+
+        --color-background: var(--color-background);
+        --color-background-canvas: var(--color-background-canvas);
+        --color-background-bone: var(--color-background-bone);
+        --color-surface: var(--color-surface);
+        --color-surface-card: var(--color-surface-card);
+        --color-surface-dark: var(--color-surface-dark);
+        --color-surface-deep: var(--color-surface-deep);
+        --color-surface-hover: var(--color-surface-hover);
+        --color-surface-active: var(--color-surface-active);
+        --color-surface-muted: var(--color-surface-muted);
+
+        --color-foreground: var(--color-foreground);
+        --color-ink: var(--color-ink);
+        --color-body: var(--color-body);
+        --color-charcoal: var(--color-charcoal);
+        --color-mute: var(--color-mute);
+        --color-ash: var(--color-ash);
+        --color-stone: var(--color-stone);
+        --color-on-primary: var(--color-on-primary);
+        --color-on-secondary: var(--color-on-secondary);
+        --color-on-background: var(--color-on-background);
+        --color-on-surface: var(--color-on-surface);
+        --color-on-dark: var(--color-on-dark);
+        --color-on-dark-mute: var(--color-on-dark-mute);
+        --color-on-warning: var(--color-on-warning);
+
+        --color-hairline: var(--color-hairline);
+        --color-hairline-strong: var(--color-hairline-strong);
+        --color-divider: var(--color-divider);
+        --color-divider-dark: var(--color-divider-dark);
+        --color-hero-warm: var(--color-hero-warm);
+        --color-hero-glow: var(--color-hero-glow);
+        --color-hero-pink: var(--color-hero-pink);
+        --color-badge-success: var(--color-badge-success);
+        --color-badge-warning: var(--color-badge-warning);
+        --color-badge-info: var(--color-badge-info);
+        --color-overlay: var(--color-overlay);
+
+        /* Spacing */
+        --spacing-xxs: var(--spacing-xxs);
+        --spacing-xs: var(--spacing-xs);
+        --spacing-sm: var(--spacing-sm);
+        --spacing-md: var(--spacing-md);
+        --spacing-lg: var(--spacing-lg);
+        --spacing-xl: var(--spacing-xl);
+        --spacing-xxl: var(--spacing-xxl);
+        --spacing-xxxl: var(--spacing-xxxl);
+        --spacing-section: var(--spacing-section);
+        --spacing-band: var(--spacing-band);
+
+        /* Radius */
+        --radius-none: var(--radius-none);
+        --radius-xs: var(--radius-xs);
+        --radius-sm: var(--radius-sm);
+        --radius-md: var(--radius-md);
+        --radius-lg: var(--radius-lg);
+        --radius-full: var(--radius-full);
+
+        /* Font Family */
+        --font-display: var(--font-display);
+        --font-body: var(--font-body);
+        --font-mono: var(--font-mono);
+
+        /* Font Size */
+        --text-display-xl: var(--text-display-xl);
+        --text-heading-lg: var(--text-heading-lg);
+        --text-display-sm: var(--text-display-sm);
+        --text-heading-sm: var(--text-heading-sm);
+        --text-body-md: var(--text-body-md);
+        --text-body-sm: var(--text-body-sm);
+        --text-button-md: var(--text-button-md);
+        --text-caption: var(--text-caption);
+        --text-code-md: var(--text-code-md);
+
+        /* Line Height */
+        --leading-display-xl: var(--leading-display-xl);
+        --leading-heading-lg: var(--leading-heading-lg);
+        --leading-display-sm: var(--leading-display-sm);
+        --leading-heading-sm: var(--leading-heading-sm);
+        --leading-body-md: var(--leading-body-md);
+        --leading-body-sm: var(--leading-body-sm);
+        --leading-button-md: var(--leading-button-md);
+        --leading-caption: var(--leading-caption);
+        --leading-code-md: var(--leading-code-md);
+
+        /* Font Weight */
+        --font-weight-normal: var(--weight-normal);
+        --font-weight-medium: var(--weight-medium);
+
+        /* Shadows */
+        --shadow-level0: var(--shadow-level0);
+        --shadow-level1: var(--shadow-level1);
+        --shadow-level2: var(--shadow-level2);
+        --shadow-level3: var(--shadow-level3);
+        --shadow-level4: var(--shadow-level4);
+        --shadow-level5: var(--shadow-level5);
+
+        /* Animation */
+        --duration-fast: var(--duration-fast);
+        --duration-normal: var(--duration-normal);
+        --duration-slower: var(--duration-slower);
+        --easing-default: var(--easing-default);
+        --easing-in-out: var(--easing-in-out);
+
+        /* Z-Index */
+        --z-dropdown: var(--z-dropdown);
+        --z-modal: var(--z-modal);
+        --z-toast: var(--z-toast);
+      }
+
+      /* ---- Base Styles ---- */
+      * {
+        box-sizing: border-box;
+      }
+
+      html {
+        font-family: var(--font-body);
+        font-size: var(--text-body-md);
+        line-height: var(--leading-body-md);
+        color: var(--color-ink);
+        background-color: var(--color-background);
+        -webkit-font-smoothing: antialiased;
+        -moz-osx-font-smoothing: grayscale;
+      }
+
+      body {
+        min-height: 100vh;
+      }
+
+      /* Display font for headlines */
+      h1, h2, h3, h4, h5, h6 {
+        font-family: var(--font-display);
+        font-weight: var(--weight-medium);
+        color: var(--color-ink);
+      }
+
+      /* Interactive elements */
+      button, select, input, textarea {
+        font-family: inherit;
+        font-size: inherit;
+      }
+
+      /* Focus ring */
+      *:focus-visible {
+        outline: none;
+        ring: 2px solid var(--color-ring-focus);
+        ring-offset: 2px;
+      }
+
+      /* Sheet animations */
       .sheet {
         opacity: 0;
         pointer-events: none;
-        transition: opacity 0.2s ease;
+        transition: opacity var(--duration-normal) var(--easing-default);
       }
       .sheet:not(.hidden) {
         opacity: 1;
@@ -18,7 +369,7 @@
       }
       .sheet .sheet-panel {
         transform: translateY(100%);
-        transition: transform 0.28s cubic-bezier(0.22, 0.68, 0, 1);
+        transition: transform var(--duration-slower) var(--easing-default);
       }
       @media (min-width: 640px) {
         .sheet .sheet-panel {
@@ -28,28 +379,59 @@
       .sheet-open .sheet-panel {
         transform: translateY(0) translateX(0);
       }
+
+      /* Modal overlay backdrop */
+      .modal {
+        background-color: var(--color-overlay);
+      }
+
+      /* Scrollbar styling */
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: var(--color-hairline) transparent;
+      }
+      *::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      *::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      *::-webkit-scrollbar-thumb {
+        background-color: var(--color-hairline);
+        border-radius: var(--radius-full);
+      }
+      *::-webkit-scrollbar-thumb:hover {
+        background-color: var(--color-hairline-strong);
+      }
+
+      /* Selection */
+      ::selection {
+        background-color: var(--color-primary-bg);
+        color: var(--color-primary);
+      }
     </style>
   </head>
 
-  <body class="min-h-screen bg-slate-50 font-sans text-slate-900">
-    <aside class="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col bg-slate-950 p-5 text-white lg:flex">
+  <body class="min-h-screen bg-background font-body text-ink">
+    <aside class="fixed inset-y-0 left-0 z-40 hidden w-72 flex-col bg-surface-deep p-5 text-on-dark lg:flex">
       <nav id="desktopNav" class="mt-10 grid gap-2"></nav>
     </aside>
 
     <main class="min-h-screen pb-24 lg:ml-72 lg:pb-8">
-      <header class="sticky top-0 z-20 flex items-center justify-between border-b border-slate-100 bg-slate-50/95 px-5 py-4 backdrop-blur lg:px-10">
-        <h1 id="pageTitle" class="text-xl font-extrabold">Dashboard</h1>
+      <header class="sticky top-0 z-20 flex items-center justify-between border-b border-hairline bg-background/95 px-5 py-4 backdrop-blur lg:px-10">
+        <h1 id="pageTitle" class="text-heading-lg font-medium">Dashboard</h1>
         <div class="flex items-center gap-2">
-          <select id="dashboardFilter" class="header-action rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium outline-none focus:border-blue-500" data-header-for="dashboard">
+          <select id="dashboardFilter" class="header-action rounded-md border border-hairline-strong bg-surface-card px-3 py-2 text-sm font-medium outline-none focus:border-primary" data-header-for="dashboard">
             <option value="7d" selected>7 Hari</option>
             <option value="1m">1 Bulan</option>
             <option value="1y">1 Tahun</option>
             <option value="all">Semua</option>
           </select>
-          <button id="cartButton" class="header-action hidden rounded-xl bg-slate-950 px-4 py-2.5 text-sm font-bold text-white" data-header-for="stock">
+          <button id="cartButton" class="header-action hidden rounded-md bg-surface-deep px-4 py-2.5 text-sm font-medium text-on-dark" data-header-for="stock">
             Keranjang <span id="cartCount">0</span>
           </button>
-          <button id="addProductButton" class="header-action hidden rounded-xl bg-blue-600 px-4 py-2.5 text-sm font-bold text-white shadow-lg shadow-blue-600/20" data-header-for="stock">
+          <button id="addProductButton" class="header-action hidden rounded-md bg-primary px-4 py-2.5 text-sm font-medium text-on-primary shadow-lg shadow-primary/20" data-header-for="stock">
             Tambah produk
           </button>
         </div>
@@ -57,253 +439,253 @@
 
       <div class="mx-auto max-w-7xl p-5 lg:p-10">
         <section id="dashboardPage" class="page space-y-6">
-          <div class="-mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1 sm:mx-0 sm:overflow-visible sm:px-0 sm:grid sm:grid-cols-2 xl:grid-cols-3">
-            <article class="min-w-48 snap-start rounded-3xl bg-white p-5 shadow-xs">
-              <p class="text-sm font-semibold">Stok Tersedia</p>
-              <strong id="saleMetric" class="mt-2 block text-3xl font-black"></strong>
+          <div class="mx-5 flex snap-x gap-3 overflow-x-auto px-5 pb-1 sm:mx-0 sm:overflow-visible sm:px-0 sm:grid sm:grid-cols-2 xl:grid-cols-3">
+            <article class="min-w-48 snap-start rounded-lg bg-surface-card p-5 shadow-level1">
+              <p class="text-body-sm font-medium">Stok Tersedia</p>
+              <strong id="saleMetric" class="mt-2 block text-display-sm font-medium"></strong>
             </article>
-            <article class="min-w-48 snap-start rounded-3xl bg-white p-5 shadow-xs">
-              <p class="text-sm font-semibold">Transaksi</p>
-              <strong id="dashPaymentTotal" class="mt-2 block text-3xl font-black"></strong>
-              <p id="dashPaymentCount" class="mt-3 text-xs">0</p>
+            <article class="min-w-48 snap-start rounded-lg bg-surface-card p-5 shadow-level1">
+              <p class="text-body-sm font-medium">Transaksi</p>
+              <strong id="dashPaymentTotal" class="mt-2 block text-display-sm font-medium"></strong>
+              <p id="dashPaymentCount" class="mt-3 text-caption">0</p>
             </article>
-            <article class="min-w-48 snap-start rounded-3xl bg-white p-5 shadow-xs">
-              <p class="text-sm font-semibold">Pendapatan</p>
-              <strong id="revenueMetric" class="mt-2 block text-3xl font-black">0</strong>
+            <article class="min-w-48 snap-start rounded-lg bg-surface-card p-5 shadow-level1">
+              <p class="text-body-sm font-medium">Pendapatan</p>
+              <strong id="revenueMetric" class="mt-2 block text-display-sm font-medium">0</strong>
             </article>
-            <article class="min-w-48 snap-start rounded-3xl bg-white p-5 shadow-xs">
-              <p class="text-sm font-semibold">Cash</p>
-              <strong id="dashPaymentCash" class="mt-2 block text-3xl font-black"></strong>
-              <p id="dashPaymentCashCount" class="mt-3 text-xs">0</p>
+            <article class="min-w-48 snap-start rounded-lg bg-surface-card p-5 shadow-level1">
+              <p class="text-body-sm font-medium">Cash</p>
+              <strong id="dashPaymentCash" class="mt-2 block text-display-sm font-medium"></strong>
+              <p id="dashPaymentCashCount" class="mt-3 text-caption">0</p>
             </article>
-            <article class="min-w-48 snap-start rounded-3xl bg-white p-5 shadow-xs">
-              <p class="text-sm font-semibold">Wallet</p>
-              <strong id="dashPaymentWallet" class="mt-2 block text-3xl font-black"></strong>
-              <p id="dashPaymentWalletCount" class="mt-3 text-xs">0</p>
+            <article class="min-w-48 snap-start rounded-lg bg-surface-card p-5 shadow-level1">
+              <p class="text-body-sm font-medium">Wallet</p>
+              <strong id="dashPaymentWallet" class="mt-2 block text-display-sm font-medium"></strong>
+              <p id="dashPaymentWalletCount" class="mt-3 text-caption">0</p>
             </article>
-            <article class="min-w-48 snap-start rounded-3xl bg-white p-5 shadow-xs">
-              <p class="text-sm font-semibold">Bank</p>
-              <strong id="dashPaymentBank" class="mt-2 block text-3xl font-black">0</strong>
-              <p id="dashPaymentBankCount" class="mt-3 text-xs">0</p>
+            <article class="min-w-48 snap-start rounded-lg bg-surface-card p-5 shadow-level1">
+              <p class="text-body-sm font-medium">Bank</p>
+              <strong id="dashPaymentBank" class="mt-2 block text-display-sm font-medium">0</strong>
+              <p id="dashPaymentBankCount" class="mt-3 text-caption">0</p>
             </article>
           </div>
 
-          <section class="rounded-3xl bg-white shadow-sm ring-1 ring-slate-100 p-6">
+          <section class="rounded-lg bg-surface-card shadow-level1 ring-1 ring-hairline p-6">
             <div class="flex items-center justify-between">
-              <h2 class="font-extrabold">Card Trend</h2>
-              <span id="trendBadge" class="rounded-full px-3 py-1 text-xs font-bold"></span>
+              <h2 class="font-medium">Card Trend</h2>
+              <span id="trendBadge" class="rounded-full px-3 py-1 text-caption font-medium"></span>
             </div>
             <div id="trendChart" class="mt-5 flex h-32 items-end gap-2"></div>
           </section>
 
           <div class="grid gap-5 xl:grid-cols-2">
-            <section class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100">
+            <section class="overflow-hidden rounded-lg bg-surface-card shadow-level1 ring-1 ring-hairline">
               <div class="flex items-center justify-between p-5">
-                <div><h2 class="font-extrabold">Transaksi terbaru</h2></div>
-                <button data-go="history" class="text-sm font-bold text-blue-600">Lihat semua</button>
+                <div><h2 class="font-medium">Transaksi terbaru</h2></div>
+                <button data-go="history" class="text-sm font-medium text-primary">Lihat semua</button>
               </div>
-              <div id="recentTransactions" class="border-t border-slate-100"></div>
+              <div id="recentTransactions" class="border-t border-hairline"></div>
             </section>
-            <section class="overflow-hidden rounded-3xl bg-white shadow-sm ring-1 ring-slate-100">
-              <div class="p-5"><h2 class="font-extrabold">Produk Terlaris</h2></div>
-              <div id="topProducts" class="border-t border-slate-100"></div>
+            <section class="overflow-hidden rounded-lg bg-surface-card shadow-level1 ring-1 ring-hairline">
+              <div class="p-5"><h2 class="font-medium">Produk Terlaris</h2></div>
+              <div id="topProducts" class="border-t border-hairline"></div>
             </section>
           </div>
         </section>
 
         <section id="stockPage" class="page hidden space-y-5">
           <div class="flex flex-col gap-3 sm:flex-row">
-            <label class="flex flex-1 items-center gap-2 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-100">
-              <span class="text-slate-400">⌕</span>
+            <label class="flex flex-1 items-center gap-2 rounded-lg bg-surface-card px-4 py-3 shadow-level1 ring-1 ring-hairline">
+              <span class="text-ash">⌕</span>
               <input id="stockSearch" class="w-full bg-transparent text-sm outline-none" placeholder="Cari produk, warna, atau size" />
             </label>
-            <div class="flex rounded-2xl bg-slate-200/70 p-1">
-              <button data-stock-mode="warehouse" class="stock-mode flex-1 rounded-xl px-4 py-2.5 text-sm font-bold">Gudang</button>
-              <button data-stock-mode="sale" class="stock-mode flex-1 rounded-xl px-4 py-2.5 text-sm font-bold">Pasar</button>
+            <div class="flex rounded-lg bg-hairline/70 p-1">
+              <button data-stock-mode="warehouse" class="stock-mode flex-1 rounded-md px-4 py-2.5 text-sm font-medium">Gudang</button>
+              <button data-stock-mode="sale" class="stock-mode flex-1 rounded-md px-4 py-2.5 text-sm font-medium">Pasar</button>
             </div>
           </div>
-          <p id="stockSummary" class="text-sm text-slate-500"></p>
+          <p id="stockSummary" class="text-sm text-mute"></p>
           <div id="stockCards" class="flex flex-col gap-3"></div>
         </section>
 
         <section id="transactionPage" class="page hidden space-y-5">
           <div>
-            <h2 class="text-2xl font-black">Input transaksi</h2>
-            <p class="mt-1 text-sm text-slate-500">Pilih produk, warna, lalu size dari stok jual.</p>
+            <h2 class="text-heading-lg font-medium">Input transaksi</h2>
+            <p class="mt-1 text-sm text-mute">Pilih produk, warna, lalu size dari stok jual.</p>
           </div>
           <div class="grid gap-5 xl:grid-cols-[1.2fr_.8fr]">
-            <section class="rounded-3xl bg-white p-5 shadow-sm ring-1 ring-slate-100">
+            <section class="rounded-lg bg-surface-card p-5 shadow-level1 ring-1 ring-hairline">
               <div class="flex items-center justify-between">
                 <div>
-                  <h3 class="font-extrabold">1. Pilih produk</h3>
-                  <p class="mt-1 text-sm text-slate-400">Hanya stok siap jual.</p>
+                  <h3 class="font-medium">1. Pilih produk</h3>
+                  <p class="mt-1 text-sm text-ash">Hanya stok siap jual.</p>
                 </div>
-                <button id="resetTransactionButton" class="text-sm font-bold text-blue-600">Reset</button>
+                <button id="resetTransactionButton" class="text-sm font-medium text-primary">Reset</button>
               </div>
               <div id="transactionCatalog" class="mt-5 grid gap-3 sm:grid-cols-2"></div>
               <div id="transactionSelection" class="mt-5"></div>
             </section>
             
-            <form id="transactionForm" class="h-fit rounded-3xl bg-slate-950 p-6 text-white">
-              <p class="text-sm font-medium text-slate-400">2. Buat transaksi</p>
-              <h3 id="selectedVariantName" class="mt-2 text-xl font-extrabold">Pilih produk dulu</h3>
-              <div id="priceRange" class="mt-5 rounded-2xl bg-white/10 p-4 text-sm text-slate-300">Pilih warna dan size untuk melihat harga.</div>
+            <form id="transactionForm" class="h-fit rounded-lg bg-surface-deep p-6 text-on-dark">
+              <p class="text-sm font-medium text-charcoal">2. Buat transaksi</p>
+              <h3 id="selectedVariantName" class="mt-2 text-heading-sm font-medium">Pilih produk dulu</h3>
+              <div id="priceRange" class="mt-5 rounded-lg bg-primary-bg/50 p-4 text-sm text-stone">Pilih warna dan size untuk melihat harga.</div>
               <div class="mt-5 grid gap-4 sm:grid-cols-2 xl:grid-cols-1">
-                <label class="text-sm font-bold">Jumlah
-                  <input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" />
+                <label class="text-sm font-medium">Jumlah
+                  <input id="transactionQty" type="number" min="1" required disabled class="mt-2 w-full rounded-lg border-0 bg-surface-card px-3 py-3 font-medium text-ink outline-none disabled:bg-hairline/50" />
                 </label>
-                <label class="text-sm font-bold">Harga jual / unit
-                  <input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-xl border-0 bg-white px-3 py-3 font-bold text-slate-900 outline-none disabled:bg-white/30" />
+                <label class="text-sm font-medium">Harga jual / unit
+                  <input id="transactionPrice" type="number" min="1" required disabled class="mt-2 w-full rounded-lg border-0 bg-surface-card px-3 py-3 font-medium text-ink outline-none disabled:bg-hairline/50" />
                 </label>
               </div>
               <div class="mt-5">
-                <p class="text-sm font-bold">Metode pembayaran</p>
+                <p class="text-sm font-medium">Metode pembayaran</p>
                 <div id="transactionPaymentMethods" class="mt-3 grid grid-cols-3 gap-2">
-                  <button type="button" data-transaction-payment="cash" class="rounded-xl px-3 py-3 text-xs font-bold">Cash</button>
-                  <button type="button" data-transaction-payment="bank" class="rounded-xl px-3 py-3 text-xs font-bold">Bank</button>
-                  <button type="button" data-transaction-payment="wallet" class="rounded-xl px-3 py-3 text-xs font-bold">Wallet</button>
+                  <button type="button" data-transaction-payment="cash" class="rounded-lg px-3 py-3 text-xs font-medium">Cash</button>
+                  <button type="button" data-transaction-payment="bank" class="rounded-lg px-3 py-3 text-xs font-medium">Bank</button>
+                  <button type="button" data-transaction-payment="wallet" class="rounded-lg px-3 py-3 text-xs font-medium">Wallet</button>
                 </div>
               </div>
               <div class="mt-5 flex items-center justify-between border-y border-white/10 py-4">
-                <span class="text-sm text-slate-400">Total transaksi</span>
-                <strong id="transactionTotal" class="text-2xl font-black">Rp0</strong>
+                <span class="text-sm text-charcoal">Total transaksi</span>
+                <strong id="transactionTotal" class="text-display-sm font-medium">Rp0</strong>
               </div>
-              <button id="saveTransactionButton" disabled class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white disabled:bg-white/20">Simpan transaksi</button>
+              <button id="saveTransactionButton" disabled class="mt-5 w-full rounded-lg bg-primary px-4 py-3 font-medium text-on-primary disabled:bg-hairline/30">Simpan transaksi</button>
             </form>
           </div>
         </section>
 
         <section id="historyPage" class="page hidden space-y-5">
-          <div id="historyDateFilters" class="-mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:mx-0 sm:px-0"></div>
+          <div id="historyDateFilters" class="mx-5 flex gap-2 overflow-x-auto px-5 pb-1 sm:mx-0 sm:px-0"></div>
           <input id="customHistoryDate" type="date" class="sr-only" />
           <div id="historyCards" class="grid gap-3"></div>
         </section>
       </div>
     </main>
 
-    <nav id="mobileNav" class="fixed inset-x-0 bottom-0 z-40 flex border-t border-slate-100 bg-white px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-10px_30px_rgba(15,23,42,.06)] lg:hidden"></nav>
+    <nav id="mobileNav" class="fixed inset-x-0 bottom-0 z-40 flex border-t border-hairline bg-surface-card px-3 pb-[max(.75rem,env(safe-area-inset-bottom))] pt-2 shadow-level3 lg:hidden"></nav>
 
-    <div id="productModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5">
-      <div class="max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-4xl sm:rounded-3xl sm:p-6">
+    <div id="productModal" class="modal hidden fixed inset-0 z-50 items-end bg-overlay sm:items-center sm:p-5">
+      <div class="max-h-[94vh] w-full overflow-y-auto rounded-t-lg bg-surface-card p-5 shadow-level5 sm:max-w-4xl sm:rounded-lg sm:p-6">
         <div class="flex items-start justify-between gap-4">
           <div>
-            <p class="text-xs font-black tracking-widest text-blue-600">PRODUK BARU</p>
-            <h2 class="mt-1 text-xl font-black">Tambah produk & stok awal</h2>
-            <p class="mt-1 text-sm text-slate-500">Satu gambar utama untuk produk. Warna cukup dipilih, dan bisa custom.</p>
+            <p class="text-xs font-medium tracking-widest text-primary">PRODUK BARU</p>
+            <h2 class="mt-1 text-heading-lg font-medium">Tambah produk & stok awal</h2>
+            <p class="mt-1 text-sm text-mute">Satu gambar utama untuk produk. Warna cukup dipilih, dan bisa custom.</p>
           </div>
-          <button data-close="productModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button>
+          <button data-close="productModal" class="grid size-10 place-items-center rounded-lg bg-hairline text-xl text-ash">×</button>
         </div>
         <form id="productForm" class="mt-6">
           <div class="grid gap-4 sm:grid-cols-2">
-            <label class="text-sm font-bold text-slate-700">Merek
-              <input id="productName" required placeholder="Contoh: Adidas" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+            <label class="text-sm font-medium text-ink">Merek
+              <input id="productName" required placeholder="Contoh: Adidas" class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
             </label>
-            <label class="text-sm font-bold text-slate-700">Seri
-              <input id="productModel" required placeholder="Contoh: Warzawa" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+            <label class="text-sm font-medium text-ink">Seri
+              <input id="productModel" required placeholder="Contoh: Warzawa" class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
             </label>
           </div>
-          <label class="mt-4 block text-sm font-bold text-slate-700">Gambar utama produk
-            <input id="productImage" type="file" accept="image/jpeg,image/png,image/webp" required class="mt-2 block w-full rounded-xl border border-slate-200 p-2 text-xs file:mr-2 file:rounded-lg file:border-0 file:bg-blue-50 file:px-2 file:py-1.5 file:font-bold file:text-blue-700" />
+          <label class="mt-4 block text-sm font-medium text-ink">Gambar utama produk
+            <input id="productImage" type="file" accept="image/jpeg,image/png,image/webp" required class="mt-2 block w-full rounded-lg border border-hairline-strong p-2 text-xs file:mr-2 file:rounded-md file:border-0 file:bg-primary-bg file:px-2 file:py-1.5 file:font-medium file:text-primary" />
           </label>
           <div class="mt-6 flex items-center justify-between">
             <div>
-              <h3 class="font-extrabold">Seri warna</h3>
-              <p class="mt-1 text-xs text-slate-500">Tambah semua warna produk sekaligus.</p>
+              <h3 class="font-medium">Seri warna</h3>
+              <p class="mt-1 text-caption text-mute">Tambah semua warna produk sekaligus.</p>
             </div>
-            <button id="addColorButton" type="button" class="rounded-xl bg-blue-50 px-3 py-2 text-sm font-bold text-blue-700">+ Warna</button>
+            <button id="addColorButton" type="button" class="rounded-lg bg-primary-bg px-3 py-2 text-sm font-medium text-primary">+ Warna</button>
           </div>
           <div id="colorGroups" class="mt-4 space-y-4"></div>
           <div class="mt-6 flex justify-end gap-2">
-            <button type="button" data-close="productModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button>
-            <button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan produk</button>
+            <button type="button" data-close="productModal" class="rounded-lg bg-hairline px-4 py-3 text-sm font-medium">Batal</button>
+            <button class="rounded-lg bg-primary px-5 py-3 text-sm font-medium text-on-primary">Simpan produk</button>
           </div>
         </form>
       </div>
     </div>
 
-    <div id="variantModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5">
-      <div class="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-lg sm:rounded-3xl sm:p-6">
+    <div id="variantModal" class="modal hidden fixed inset-0 z-50 items-end bg-overlay sm:items-center sm:p-5">
+      <div class="w-full rounded-t-lg bg-surface-card p-5 shadow-level5 sm:max-w-lg sm:rounded-lg sm:p-6">
         <div class="flex items-start justify-between">
           <div>
-            <p class="text-xs font-black tracking-widest text-blue-600">UPDATE UNIT</p>
-            <h2 id="variantModalTitle" class="mt-1 text-xl font-black">Tambah warna / size</h2>
+            <p class="text-xs font-medium tracking-widest text-primary">UPDATE UNIT</p>
+            <h2 id="variantModalTitle" class="mt-1 text-heading-lg font-medium">Tambah warna / size</h2>
           </div>
-          <button data-close="variantModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button>
+          <button data-close="variantModal" class="grid size-10 place-items-center rounded-lg bg-hairline text-xl text-ash">×</button>
         </div>
         <form id="variantForm" class="mt-6">
           <input id="editingVariantId" type="hidden" />
-          <label class="text-sm font-bold text-slate-700">Produk
-            <select id="variantProduct" required class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500"></select>
+          <label class="text-sm font-medium text-ink">Produk
+            <select id="variantProduct" required class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary"></select>
           </label>
           <div class="mt-4">
-            <label class="text-sm font-bold text-slate-700">Warna</label>
+            <label class="text-sm font-medium text-ink">Warna</label>
             <div id="variantColorPicker" class="mt-2 flex flex-wrap gap-2"></div>
             <input id="variantColor" type="hidden" required />
             <input id="variantColorHex" type="hidden" />
             <div id="variantCustomSlot"></div>
           </div>
-          <label class="mt-4 block text-sm font-bold text-slate-700">Size
-            <input id="variantSize" required placeholder="Contoh: M, L, XL atau 42" class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+          <label class="mt-4 block text-sm font-medium text-ink">Size
+            <input id="variantSize" required placeholder="Contoh: M, L, XL atau 42" class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
           </label>
           <div class="mt-4 grid gap-4 sm:grid-cols-2">
-            <label class="text-sm font-bold text-slate-700">Stok gudang
-              <input id="variantWarehouseQty" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+            <label class="text-sm font-medium text-ink">Stok gudang
+              <input id="variantWarehouseQty" type="number" min="0" required class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
             </label>
-            <label class="text-sm font-bold text-slate-700">HPP / modal
-              <input id="variantHpp" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+            <label class="text-sm font-medium text-ink">HPP / modal
+              <input id="variantHpp" type="number" min="0" required class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
             </label>
-            <label class="text-sm font-bold text-slate-700">Harga normal
-              <input id="variantNormalPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+            <label class="text-sm font-medium text-ink">Harga normal
+              <input id="variantNormalPrice" type="number" min="0" required class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
             </label>
-            <label class="text-sm font-bold text-slate-700">Harga minimum
-              <input id="variantMinimumPrice" type="number" min="0" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+            <label class="text-sm font-medium text-ink">Harga minimum
+              <input id="variantMinimumPrice" type="number" min="0" required class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
             </label>
           </div>
           <div class="mt-6 flex justify-end gap-2">
-            <button type="button" data-close="variantModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button>
-            <button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Simpan</button>
+            <button type="button" data-close="variantModal" class="rounded-lg bg-hairline px-4 py-3 text-sm font-medium">Batal</button>
+            <button class="rounded-lg bg-primary px-5 py-3 text-sm font-medium text-on-primary">Simpan</button>
           </div>
         </form>
       </div>
     </div>
 
-    <div id="transferModal" class="modal hidden fixed inset-0 z-50 items-end bg-slate-950/50 sm:items-center sm:p-5">
-      <div class="w-full rounded-t-3xl bg-white p-5 shadow-2xl sm:max-w-md sm:rounded-3xl sm:p-6">
+    <div id="transferModal" class="modal hidden fixed inset-0 z-50 items-end bg-overlay sm:items-center sm:p-5">
+      <div class="w-full rounded-t-lg bg-surface-card p-5 shadow-level5 sm:max-w-md sm:rounded-lg sm:p-6">
         <div class="flex items-start justify-between">
           <div>
-            <p class="text-xs font-black tracking-widest text-blue-600">PINDAH STOK</p>
-            <h2 class="mt-1 text-xl font-black">Gudang ke stok jual</h2>
+            <p class="text-xs font-medium tracking-widest text-primary">PINDAH STOK</p>
+            <h2 class="mt-1 text-heading-lg font-medium">Gudang ke stok jual</h2>
           </div>
-          <button data-close="transferModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button>
+          <button data-close="transferModal" class="grid size-10 place-items-center rounded-lg bg-hairline text-xl text-ash">×</button>
         </div>
         <form id="transferForm" class="mt-6">
-          <label class="text-sm font-bold text-slate-700">Pilih varian
-            <select id="transferVariant" required class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500"></select>
+          <label class="text-sm font-medium text-ink">Pilih varian
+            <select id="transferVariant" required class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary"></select>
           </label>
-          <label class="mt-4 block text-sm font-bold text-slate-700">Jumlah dipindahkan
-            <input id="transferQty" type="number" min="1" required class="mt-2 w-full rounded-xl border border-slate-200 px-3 py-3 outline-none focus:border-blue-500" />
+          <label class="mt-4 block text-sm font-medium text-ink">Jumlah dipindahkan
+            <input id="transferQty" type="number" min="1" required class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
           </label>
           <div class="mt-6 flex justify-end gap-2">
-            <button type="button" data-close="transferModal" class="rounded-2xl bg-slate-100 px-4 py-3 text-sm font-bold">Batal</button>
-            <button class="rounded-2xl bg-blue-600 px-5 py-3 text-sm font-bold text-white">Pindahkan</button>
+            <button type="button" data-close="transferModal" class="rounded-lg bg-hairline px-4 py-3 text-sm font-medium">Batal</button>
+            <button class="rounded-lg bg-primary px-5 py-3 text-sm font-medium text-on-primary">Pindahkan</button>
           </div>
         </form>
       </div>
     </div>
 
-    <div id="salesSheet" class="sheet hidden fixed inset-0 z-50 bg-slate-950/50 sm:bg-transparent">
-      <div class="sheet-panel absolute inset-x-0 bottom-0 max-h-[92vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[440px] sm:rounded-none sm:rounded-l-3xl sm:p-6">
+    <div id="salesSheet" class="sheet hidden fixed inset-0 z-50 bg-overlay sm:bg-transparent">
+      <div class="sheet-panel absolute inset-x-0 bottom-0 max-h-[92vh] w-full overflow-y-auto rounded-t-lg bg-surface-card p-5 shadow-level5 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[440px] sm:rounded-none sm:rounded-l-lg sm:p-6">
         <div id="salesSheetContent"></div>
       </div>
     </div>
 
-    <div id="detailModal" class="sheet hidden fixed inset-0 z-50 bg-slate-950/50 sm:bg-transparent">
-      <div class="sheet-panel absolute inset-x-0 bottom-0 max-h-[94vh] w-full overflow-y-auto rounded-t-3xl bg-white p-5 shadow-2xl sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[520px] sm:rounded-none sm:rounded-l-3xl sm:p-6">
+    <div id="detailModal" class="sheet hidden fixed inset-0 z-50 bg-overlay sm:bg-transparent">
+      <div class="sheet-panel absolute inset-x-0 bottom-0 max-h-[94vh] w-full overflow-y-auto rounded-t-lg bg-surface-card p-5 shadow-level5 sm:inset-y-0 sm:left-auto sm:right-0 sm:h-full sm:max-h-none sm:w-[520px] sm:rounded-none sm:rounded-l-lg sm:p-6">
         <div id="detailContent"></div>
       </div>
     </div>
     
-    <div id="toast" class="pointer-events-none fixed bottom-24 right-5 z-[60] hidden max-w-sm rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-2xl lg:bottom-5"></div>
+    <div id="toast" class="pointer-events-none fixed bottom-24 right-5 z-[60] hidden max-w-sm rounded-lg px-4 py-3 text-sm font-medium text-white shadow-level5 lg:bottom-5"></div>
 
     <script>
       // ===== 1. KONFIGURASI & STATE =====
@@ -349,7 +731,7 @@
       
       const photoUrl = (item) => item.image_url?.startsWith("http") ? item.image_url : `${API_BASE}${item.image_url || ""}`;
       
-      const emptyState = (message) => `<div class="rounded-3xl bg-white p-8 text-center text-sm text-slate-400 shadow-sm ring-1 ring-slate-100">${message}</div>`;
+      const emptyState = (message) => `<div class="rounded-lg bg-surface-card p-8 text-center text-sm text-mute shadow-level1 ring-1 ring-hairline">${message}</div>`;
 
       async function request(path, options = {}) {
         const response = await fetch(`${API_BASE}${path}`, options);
@@ -368,7 +750,7 @@
       function toast(message, error = false) {
         const element = $("toast");
         element.textContent = message;
-        element.className = `pointer-events-none fixed bottom-24 right-5 z-[60] max-w-sm rounded-2xl px-4 py-3 text-sm font-bold text-white shadow-2xl lg:bottom-5 ${error ? "bg-rose-600" : "bg-slate-950"}`;
+        element.className = `pointer-events-none fixed bottom-24 right-5 z-[60] max-w-sm rounded-lg px-4 py-3 text-sm font-medium text-white shadow-level5 lg:bottom-5 ${error ? "bg-danger" : "bg-surface-deep"}`;
         clearTimeout(toastTimer);
         toastTimer = setTimeout(() => element.classList.add("hidden"), 3200);
       }
@@ -422,7 +804,7 @@
       }
 
       const COLOR_PALETTE = [
-        ["Hitam", "#111827"], ["Putih", "#ffffff"], ["Merah", "#ef4444"], ["Biru", "#3b82f6"],
+        ["Hitam", "#111827"], ["Putih", "#ffffff"], ["Merah", "#ef4444"], ["Biru", "#3E6AE1"],
         ["Hijau", "#22c55e"], ["Kuning", "#facc15"], ["Oranye", "#f97316"], ["Ungu", "#8b5cf6"],
         ["Pink", "#ec4899"], ["Coklat", "#92400e"], ["Abu-abu", "#9ca3af"], ["Navy", "#1e3a8a"]
       ];
@@ -433,18 +815,18 @@
       
       function colorDot(name, classes="size-6", explicit="") { 
         const hex = colorHex(name, explicit); 
-        return `<span title="${escapeHtml(name)}" class="${classes} inline-block shrink-0 rounded-full ${hex==="#ffffff"?"border border-slate-300":""}" style="background:${hex}"></span>`; 
+        return `<span title="${escapeHtml(name)}" class="${classes} inline-block shrink-0 rounded-full ${hex==="#ffffff"?"border border-hairline":""}" style="background:${hex}"></span>`; 
       }
       
       function customColorEditor(name="", hex="#94a3b8") { 
-        return `<div class="mt-3 rounded-2xl border border-blue-100 bg-blue-50/60 p-3"><div class="grid gap-3 sm:grid-cols-[1fr_auto]"><label class="text-xs font-bold text-slate-600">Nama warna<input data-custom-name value="${escapeHtml(name)}" placeholder="Contoh: Sage, Maroon, Broken White" class="mt-1 w-full rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm outline-none focus:border-blue-500" /></label><label class="text-xs font-bold text-slate-600">Warna<input data-custom-hex type="color" value="${normalizeHex(hex)}" class="mt-1 h-10 w-full cursor-pointer rounded-xl border border-slate-200 bg-white p-1 sm:w-20" /></label></div></div>`; 
+        return `<div class="mt-3 rounded-lg border border-primary-bg bg-primary-bg/60 p-3"><div class="grid gap-3 sm:grid-cols-[1fr_auto]"><label class="text-xs font-medium text-charcoal">Nama warna<input data-custom-name value="${escapeHtml(name)}" placeholder="Contoh: Sage, Maroon, Broken White" class="mt-1 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-2 text-sm outline-none focus:border-primary" /></label><label class="text-xs font-medium text-charcoal">Warna<input data-custom-hex type="color" value="${normalizeHex(hex)}" class="mt-1 h-10 w-full cursor-pointer rounded-lg border border-hairline-strong bg-surface-card p-1 sm:w-20" /></label></div></div>`; 
       }
       
       function colorPickerHtml(selected="", selectedHex="") { 
         const active = String(selected || "").toLowerCase(); 
         const custom = selected && !COLOR_PALETTE.some(([n]) => n.toLowerCase() === active); 
-        const standardButtons = COLOR_PALETTE.map(([n, hex]) => `<button type="button" data-pick-color="${escapeHtml(n)}" data-pick-hex="${hex}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-xs font-bold ${n.toLowerCase() === active ? "border-blue-600 bg-blue-50 text-blue-700 ring-2 ring-blue-100" : "border-slate-200 bg-white text-slate-600"}">${colorDot(n, "size-5", hex)}${escapeHtml(n)}</button>`).join("");
-        const customButton = `<button type="button" data-custom-color class="flex items-center gap-2 rounded-xl border border-dashed px-3 py-2 text-xs font-bold ${custom ? "border-blue-600 bg-blue-50 text-blue-700" : "border-slate-300 bg-white text-slate-600"}"><span class="grid size-5 place-items-center rounded-full border border-slate-300">＋</span>Warna custom</button>`;
+        const standardButtons = COLOR_PALETTE.map(([n, hex]) => `<button type="button" data-pick-color="${escapeHtml(n)}" data-pick-hex="${hex}" class="flex items-center gap-2 rounded-lg border px-3 py-2 text-xs font-medium ${n.toLowerCase() === active ? "border-primary bg-primary-bg text-primary ring-2 ring-primary/20" : "border-hairline-strong bg-surface-card text-charcoal"}">${colorDot(n, "size-5", hex)}${escapeHtml(n)}</button>`).join("");
+        const customButton = `<button type="button" data-custom-color class="flex items-center gap-2 rounded-lg border border-dashed px-3 py-2 text-xs font-medium ${custom ? "border-primary bg-primary-bg text-primary" : "border-hairline bg-surface-card text-charcoal"}"><span class="grid size-5 place-items-center rounded-full border border-hairline">＋</span>Warna custom</button>`;
         return standardButtons + customButton;
       }
       
@@ -459,182 +841,182 @@
       }
       
       function productPhoto(item, classes) { 
-        return item.image_url 
-          ? `<img src="${photoUrl(item)}" alt="${escapeHtml(item.product_name||item.name||"")}" class="${classes} object-cover" />` 
-          : `<div class="${classes} grid place-items-center bg-slate-100 text-xl font-black text-slate-300">${escapeHtml(item.product_name||item.name||"P").slice(0,1)}</div>`; 
-      }
-
-      function productCard(product, mode) {
-        const total = mode === "sale" ? product.saleTotal : product.warehouseTotal;
-        const secondaryLabel = mode === "sale" ? "Gudang" : "Siap jual";
-        const secondaryTotal = mode === "sale" ? product.warehouseTotal : product.saleTotal;
-        const colors = groupedColors(product);
-        const previews = colors.slice(0, 3).map((color, index) => colorDot(color.color, `size-6 ring-2 ring-white ${index ? "-ml-2.5" : ""}`, color.color_hex)).join("");
-        const colorOverflow = colors.length > 3 ? `<span class="-ml-1 grid size-6 place-items-center rounded-full bg-slate-900 text-[10px] font-bold text-white ring-2 ring-white">+${colors.length - 3}</span>` : "";
-        const sizeList = [...new Set(product.variants.map((variant) => variant.size))];
-        const sizes = sizeList.slice(0, 3).map((size) => `<span class="rounded-lg bg-slate-100 px-2 py-1 text-[11px] font-bold text-slate-500">${escapeHtml(size)}</span>`).join("");
-        const sizeOverflow = sizeList.length > 3 ? `<span class="text-xs font-bold text-slate-500">+${sizeList.length - 3}</span>` : "";
+              return item.image_url 
+                ? `<img src="${photoUrl(item)}" alt="${escapeHtml(item.product_name||item.name||"")}" class="${classes} object-cover" />` 
+                : `<div class="${classes} grid place-items-center bg-background-bone text-xl font-medium text-stone">${escapeHtml(item.product_name||item.name||"P").slice(0,1)}</div>`; 
+            }
+      
+            function productCard(product, mode) {
+              const total = mode === "sale" ? product.saleTotal : product.warehouseTotal;
+              const secondaryLabel = mode === "sale" ? "Gudang" : "Siap jual";
+              const secondaryTotal = mode === "sale" ? product.warehouseTotal : product.saleTotal;
+              const colors = groupedColors(product);
+              const previews = colors.slice(0, 3).map((color, index) => colorDot(color.color, `size-6 ring-2 ring-white ${index ? "-ml-2.5" : ""}`, color.color_hex)).join("");
+              const colorOverflow = colors.length > 3 ? `<span class="-ml-1 grid size-6 place-items-center rounded-full bg-surface-deep text-[10px] font-medium text-on-dark ring-2 ring-white">+${colors.length - 3}</span>` : "";
+              const sizeList = [...new Set(product.variants.map((variant) => variant.size))];
+              const sizes = sizeList.slice(0, 3).map((size) => `<span class="rounded-md bg-hairline px-2 py-1 text-[11px] font-medium text-mute">${escapeHtml(size)}</span>`).join("");
+              const sizeOverflow = sizeList.length > 3 ? `<span class="text-xs font-medium text-mute">+${sizeList.length - 3}</span>` : "";
         
-        const cardBody = `<div class="h-24 w-24 shrink-0 overflow-hidden rounded-xl bg-slate-100">${productPhoto(product, "h-full w-full")}</div><div class="min-w-0 flex-1"><h3 class="truncate text-lg font-black leading-tight">${escapeHtml(product.product_name)}</h3><p class="truncate text-sm text-slate-400">${escapeHtml(product.model)}</p><p class="mt-1 text-base font-black">${total} Unit</p><div class="mt-2 flex flex-wrap items-center gap-1.5">${sizes}${sizeOverflow}</div></div><div class="flex shrink-0 flex-col items-end justify-between gap-2 self-stretch"><div class="flex items-center">${previews}${colorOverflow}</div><p class="text-sm font-bold text-slate-500">${secondaryTotal} Unit</p></div>`;
-        const triggerAttr = mode === "sale" ? `data-sell-product="${product.product_id}"` : `data-open-product="${product.product_id}"`;
-        const interactiveCard = `<button ${triggerAttr} class="flex w-full items-center gap-4 text-left">${cardBody}</button>`;
+              const cardBody = `<div class="h-24 w-24 shrink-0 overflow-hidden rounded-lg bg-background-bone">${productPhoto(product, "h-full w-full")}</div><div class="min-w-0 flex-1"><h3 class="truncate text-base font-medium leading-tight">${escapeHtml(product.product_name)}</h3><p class="truncate text-sm text-ash">${escapeHtml(product.model)}</p><p class="mt-1 text-lg font-medium">${total} Unit</p><div class="mt-2 flex flex-wrap items-center gap-1.5">${sizes}${sizeOverflow}</div></div><div class="flex shrink-0 flex-col items-end justify-between gap-2 self-stretch"><div class="flex items-center">${previews}${colorOverflow}</div><p class="text-sm font-medium text-mute">${secondaryTotal} Unit</p></div>`;
+              const triggerAttr = mode === "sale" ? `data-sell-product="${product.product_id}"` : `data-open-product="${product.product_id}"`;
+              const interactiveCard = `<button ${triggerAttr} class="flex w-full items-center gap-4 text-left">${cardBody}</button>`;
         
-        return `<article class="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-100">${interactiveCard}</article>`;
-      }
+              return `<article class="rounded-lg bg-surface-card p-4 shadow-level1 ring-1 ring-hairline">${interactiveCard}</article>`;
+            }
 
       // ===== 3. RENDER HALAMAN =====
-      function renderNavigation() {
-        const items = [["dashboard", "⌂", "Home"], ["stock", "▦", "Stok"], ["history", "◷", "History"]];
-        $("desktopNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex items-center gap-3 rounded-2xl px-4 py-3 text-left text-sm font-bold ${state.page === page ? "bg-white/12 text-white" : "text-slate-400 hover:bg-white/8 hover:text-white"}"><span class="grid size-7 place-items-center rounded-lg ${state.page === page ? "bg-blue-600" : "bg-white/5"}">${icon}</span>${label}</button>`).join("");
-        $("mobileNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex flex-1 flex-col items-center gap-1 rounded-xl py-1.5 text-xs font-bold ${state.page === page ? "text-blue-600" : "text-slate-400"}"><span class="grid size-9 place-items-center rounded-xl text-base ${state.page === page ? "bg-blue-50" : ""}">${icon}</span>${label}</button>`).join("");
-      }
-
-      function renderDashboard() {
-        const data = state.dashboard || {};
+            function renderNavigation() {
+              const items = [["dashboard", "⌂", "Home"], ["stock", "▦", "Stok"], ["history", "◷", "History"]];
+              $("desktopNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex items-center gap-3 rounded-lg px-4 py-3 text-left text-sm font-medium ${state.page === page ? "bg-primary-bg text-primary" : "text-ash hover:bg-hairline hover:text-ink"}"><span class="grid size-7 place-items-center rounded-md ${state.page === page ? "bg-primary" : "bg-hairline"}">${icon}</span>${label}</button>`).join("");
+              $("mobileNav").innerHTML = items.map(([page, icon, label]) => `<button data-page="${page}" class="flex flex-1 flex-col items-center gap-1 rounded-lg py-1.5 text-xs font-medium ${state.page === page ? "text-primary" : "text-ash"}"><span class="grid size-9 place-items-center rounded-lg text-base ${state.page === page ? "bg-primary-bg" : ""}">${icon}</span>${label}</button>`).join("");
+            }
+      
+            function renderDashboard() {
+              const data = state.dashboard || {};
         
-        // Filter transactions based on dashboardFilter
-        const filterMap = {
-          "1d": 1,        // 1 day
-          "7d": 7,        // 7 days
-          "1m": 30,       // 30 days
-          "1y": 365,      // 365 days
-          "all": null     // all time
-        };
-        const daysBack = filterMap[state.dashboardFilter] ?? 1;
-        const now = new Date();
-        const cutoff = daysBack ? new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000) : null;
+              // Filter transactions based on dashboardFilter
+              const filterMap = {
+                "1d": 1,        // 1 day
+                "7d": 7,        // 7 days
+                "1m": 30,       // 30 days
+                "1y": 365,      // 365 days
+                "all": null     // all time
+              };
+              const daysBack = filterMap[state.dashboardFilter] ?? 1;
+              const now = new Date();
+              const cutoff = daysBack ? new Date(now.getTime() - daysBack * 24 * 60 * 60 * 1000) : null;
         
-        const filteredTransactions = Array.isArray(state.transactions)
-          ? state.transactions.filter((t) => {
-              const createdAt = new Date(t.created_at);
-              if (Number.isNaN(createdAt.getTime())) return false;
-              if (cutoff && createdAt < cutoff) return false;
-              return true;
-            })
-          : [];
+              const filteredTransactions = Array.isArray(state.transactions)
+                ? state.transactions.filter((t) => {
+                    const createdAt = new Date(t.created_at);
+                    if (Number.isNaN(createdAt.getTime())) return false;
+                    if (cutoff && createdAt < cutoff) return false;
+                    return true;
+                  })
+                : [];
 
-        const transactionCount = filteredTransactions.length;
-        const capital = Number(data.capital ?? data.total_capital ?? 0);
+              const transactionCount = filteredTransactions.length;
+              const capital = Number(data.capital ?? data.total_capital ?? 0);
 
-        // Use dashboard data for metrics
-        $("revenueMetric").textContent = rupiah(
-          filteredTransactions.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0)
-        );
-        $("saleMetric").textContent = `${Number(data.sale_qty ?? 0)} Unit`;
+              // Use dashboard data for metrics
+              $("revenueMetric").textContent = rupiah(
+                filteredTransactions.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0)
+              );
+              $("saleMetric").textContent = `${Number(data.sale_qty ?? 0)} Unit`;
 
-        // Payment breakdown
-        const bankTrans = filteredTransactions.filter((t) => t.payment_method === "bank");
-        const walletTrans = filteredTransactions.filter((t) => t.payment_method === "wallet");
-        const cashTrans = filteredTransactions.filter((t) => t.payment_method === "cash");
-        const bankTotal = bankTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
-        const walletTotal = walletTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
-        const cashTotal = cashTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
+              // Payment breakdown
+              const bankTrans = filteredTransactions.filter((t) => t.payment_method === "bank");
+              const walletTrans = filteredTransactions.filter((t) => t.payment_method === "wallet");
+              const cashTrans = filteredTransactions.filter((t) => t.payment_method === "cash");
+              const bankTotal = bankTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
+              const walletTotal = walletTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
+              const cashTotal = cashTrans.reduce((s, t) => s + (Number(t.qty) * Number(t.unit_price)), 0);
 
-        $("dashPaymentTotal").textContent = rupiah(bankTotal + walletTotal + cashTotal);
-        $("dashPaymentCount").textContent = `${filteredTransactions.length} transaksi`;
-        $("dashPaymentBank").textContent = rupiah(bankTotal);
-        $("dashPaymentBankCount").textContent = `${bankTrans.length} transaksi`;
-        $("dashPaymentWallet").textContent = rupiah(walletTotal);
-        $("dashPaymentWalletCount").textContent = `${walletTrans.length} transaksi`;
-        $("dashPaymentCash").textContent = rupiah(cashTotal);
-        $("dashPaymentCashCount").textContent = `${cashTrans.length} transaksi`;
+              $("dashPaymentTotal").textContent = rupiah(bankTotal + walletTotal + cashTotal);
+              $("dashPaymentCount").textContent = `${filteredTransactions.length} transaksi`;
+              $("dashPaymentBank").textContent = rupiah(bankTotal);
+              $("dashPaymentBankCount").textContent = `${bankTrans.length} transaksi`;
+              $("dashPaymentWallet").textContent = rupiah(walletTotal);
+              $("dashPaymentWalletCount").textContent = `${walletTrans.length} transaksi`;
+              $("dashPaymentCash").textContent = rupiah(cashTotal);
+              $("dashPaymentCashCount").textContent = `${cashTrans.length} transaksi`;
 
-        const recentTransactions = Array.isArray(data.recent_transactions) ? data.recent_transactions : filteredTransactions.slice(0, 5);
-        const topProducts = Array.isArray(data.top_products) ? data.top_products : [];
+              const recentTransactions = Array.isArray(data.recent_transactions) ? data.recent_transactions : filteredTransactions.slice(0, 5);
+              const topProducts = Array.isArray(data.top_products) ? data.top_products : [];
 
-        $("recentTransactions").innerHTML = recentTransactions.length
-          ? recentTransactions.map((item) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${Number(item.qty || 0)} unit terjual</p></div><strong class="text-sm">${rupiah(item.total ?? item.total_price ?? (Number(item.qty || 0) * Number(item.unit_price || 0)))}</strong></article>`).join("")
-          : `<p class="p-6 text-sm text-slate-400">Belum ada transaksi dalam periode ini.</p>`;
+              $("recentTransactions").innerHTML = recentTransactions.length
+                ? recentTransactions.map((item) => `<article class="flex items-center gap-3 border-b border-hairline px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-lg")}<div class="min-w-0 flex-1"><p class="truncate font-medium">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-ash">${Number(item.qty || 0)} unit terjual</p></div><strong class="text-sm">${rupiah(item.total ?? item.total_price ?? (Number(item.qty || 0) * Number(item.unit_price || 0)))}</strong></article>`).join("")
+                : `<p class="p-6 text-sm text-mute">Belum ada transaksi dalam periode ini.</p>`;
 
-        $("topProducts").innerHTML = topProducts.length
-          ? topProducts.map((item, index) => `<article class="flex items-center gap-3 border-b border-slate-100 px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-slate-400">${Number(item.sold_qty || 0)} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("")
-          : `<p class="p-6 text-sm text-slate-400">Produk terlaris muncul setelah ada transaksi.</p>`;
+              $("topProducts").innerHTML = topProducts.length
+                ? topProducts.map((item, index) => `<article class="flex items-center gap-3 border-b border-hairline px-5 py-4 last:border-0">${productPhoto(item, "size-12 shrink-0 rounded-lg")}<div class="min-w-0 flex-1"><p class="truncate font-medium">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-xs text-ash">${Number(item.sold_qty || 0)} unit terjual</p></div><strong class="text-sm">${rupiah(item.revenue)}</strong></article>`).join("")
+                : `<p class="p-6 text-sm text-mute">Produk terlaris muncul setelah ada transaksi.</p>`;
 
-        renderTrendCard();
-      }
+              renderTrendCard();
+            }
+      
+            function renderTrendCard() {
+              const days = 7;
+              const now = new Date();
+              const dayKey = (d) => d.toISOString().slice(0, 10);
+              const buckets = [];
+              for (let i = days - 1; i >= 0; i--) {
+                const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
+                buckets.push({ key: dayKey(d), label: d.toLocaleDateString("id-ID", { weekday: "short" }), revenue: 0 });
+              }
+              const bucketByKey = Object.fromEntries(buckets.map((b) => [b.key, b]));
+              const prevStart = new Date(now.getTime() - days * 2 * 24 * 60 * 60 * 1000);
+              const prevEnd = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
+              let prevPeriodRevenue = 0;
 
-      function renderTrendCard() {
-        const days = 7;
-        const now = new Date();
-        const dayKey = (d) => d.toISOString().slice(0, 10);
-        const buckets = [];
-        for (let i = days - 1; i >= 0; i--) {
-          const d = new Date(now.getTime() - i * 24 * 60 * 60 * 1000);
-          buckets.push({ key: dayKey(d), label: d.toLocaleDateString("id-ID", { weekday: "short" }), revenue: 0 });
-        }
-        const bucketByKey = Object.fromEntries(buckets.map((b) => [b.key, b]));
-        const prevStart = new Date(now.getTime() - days * 2 * 24 * 60 * 60 * 1000);
-        const prevEnd = new Date(now.getTime() - days * 24 * 60 * 60 * 1000);
-        let prevPeriodRevenue = 0;
+              (Array.isArray(state.transactions) ? state.transactions : []).forEach((t) => {
+                const createdAt = new Date(t.created_at);
+                if (Number.isNaN(createdAt.getTime())) return;
+                const amount = Number(t.qty || 0) * Number(t.unit_price || 0);
+                const key = dayKey(createdAt);
+                if (bucketByKey[key]) {
+                  bucketByKey[key].revenue += amount;
+                } else if (createdAt >= prevStart && createdAt < prevEnd) {
+                  prevPeriodRevenue += amount;
+                }
+              });
 
-        (Array.isArray(state.transactions) ? state.transactions : []).forEach((t) => {
-          const createdAt = new Date(t.created_at);
-          if (Number.isNaN(createdAt.getTime())) return;
-          const amount = Number(t.qty || 0) * Number(t.unit_price || 0);
-          const key = dayKey(createdAt);
-          if (bucketByKey[key]) {
-            bucketByKey[key].revenue += amount;
-          } else if (createdAt >= prevStart && createdAt < prevEnd) {
-            prevPeriodRevenue += amount;
-          }
-        });
+              const currentPeriodRevenue = buckets.reduce((s, b) => s + b.revenue, 0);
+              const max = Math.max(...buckets.map((b) => b.revenue), 1);
+              const points = buckets.map((b, i) => {
+                const x = (i / (buckets.length - 1)) * 100;
+                const y = 100 - (b.revenue / max) * 100;
+                return { x, y, revenue: b.revenue, label: b.label };
+              });
 
-        const currentPeriodRevenue = buckets.reduce((s, b) => s + b.revenue, 0);
-        const max = Math.max(...buckets.map((b) => b.revenue), 1);
-        const points = buckets.map((b, i) => {
-          const x = (i / (buckets.length - 1)) * 100;
-          const y = 100 - (b.revenue / max) * 100;
-          return { x, y, revenue: b.revenue, label: b.label };
-        });
+              // Build smooth bezier path
+              let pathD = "";
+              for (let i = 0; i < points.length; i++) {
+                if (i === 0) {
+                  pathD += `M ${points[i].x} ${points[i].y}`;
+                } else {
+                  const prev = points[i - 1];
+                  const curr = points[i];
+                  const cp1x = prev.x + (curr.x - prev.x) / 2;
+                  const cp1y = prev.y;
+                  const cp2x = prev.x + (curr.x - prev.x) / 2;
+                  const cp2y = curr.y;
+                  pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${curr.x} ${curr.y}`;
+                }
+              }
 
-        // Build smooth bezier path
-        let pathD = "";
-        for (let i = 0; i < points.length; i++) {
-          if (i === 0) {
-            pathD += `M ${points[i].x} ${points[i].y}`;
-          } else {
-            const prev = points[i - 1];
-            const curr = points[i];
-            const cp1x = prev.x + (curr.x - prev.x) / 2;
-            const cp1y = prev.y;
-            const cp2x = prev.x + (curr.x - prev.x) / 2;
-            const cp2y = curr.y;
-            pathD += ` C ${cp1x} ${cp1y}, ${cp2x} ${cp2y}, ${curr.x} ${curr.y}`;
-          }
-        }
+              const areaD = pathD + ` L 100 100 L 0 100 Z`;
 
-        const areaD = pathD + ` L 100 100 L 0 100 Z`;
+              $("trendChart").innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" class="h-32 w-full">
+                <defs>
+                  <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="var(--color-ink)" stop-opacity="0.14" />
+                    <stop offset="55%" stop-color="var(--color-ink)" stop-opacity="0.05" />
+                    <stop offset="100%" stop-color="var(--color-ink)" stop-opacity="0" />
+                  </linearGradient>
+                </defs>
+                <path d="${areaD}" fill="url(#trendGradient)" />
+                <path d="${pathD}" fill="none" stroke="var(--color-ink)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
+                ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.2" fill="var(--color-ink)" stroke="var(--color-background)" stroke-width="1.5" vector-effect="non-scaling-stroke" />`).join("")}
+              </svg>`;
 
-        $("trendChart").innerHTML = `<svg viewBox="0 0 100 100" preserveAspectRatio="none" class="h-32 w-full">
-          <defs>
-            <linearGradient id="trendGradient" x1="0" y1="0" x2="0" y2="1">
-              <stop offset="0%" stop-color="#000000" stop-opacity="0.14" />
-              <stop offset="55%" stop-color="#000000" stop-opacity="0.05" />
-              <stop offset="100%" stop-color="#000000" stop-opacity="0" />
-            </linearGradient>
-          </defs>
-          <path d="${areaD}" fill="url(#trendGradient)" />
-          <path d="${pathD}" fill="none" stroke="#000000" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" vector-effect="non-scaling-stroke" />
-          ${points.map(p => `<circle cx="${p.x}" cy="${p.y}" r="2.2" fill="#000000" stroke="#ffffff" stroke-width="1.5" vector-effect="non-scaling-stroke" />`).join("")}
-        </svg>`;
-
-        const badge = $("trendBadge");
-        if (prevPeriodRevenue <= 0) {
-          badge.textContent = currentPeriodRevenue > 0 ? "Baru" : "Belum ada data";
-          badge.className = "rounded-full px-3 py-1 text-xs font-bold";
-        } else {
-          const change = ((currentPeriodRevenue - prevPeriodRevenue) / prevPeriodRevenue) * 100;
-          const up = change >= 0;
-          badge.textContent = `${up ? "▲" : "▼"} ${Math.abs(change).toFixed(1)}% vs 7 hari sebelumnya`;
-          badge.className = `rounded-full px-3 py-1 text-xs font-bold ${up ? "bg-emerald-50 text-emerald-600" : "bg-red-50 text-red-500"}`;
-        }
-      }
+              const badge = $("trendBadge");
+              if (prevPeriodRevenue <= 0) {
+                badge.textContent = currentPeriodRevenue > 0 ? "Baru" : "Belum ada data";
+                badge.className = "rounded-full px-3 py-1 text-caption font-medium";
+              } else {
+                const change = ((currentPeriodRevenue - prevPeriodRevenue) / prevPeriodRevenue) * 100;
+                const up = change >= 0;
+                badge.textContent = `${up ? "▲" : "▼"} ${Math.abs(change).toFixed(1)}% vs 7 hari sebelumnya`;
+                badge.className = `rounded-full px-3 py-1 text-caption font-medium ${up ? "bg-success-light-bg text-success" : "bg-danger-light-bg text-danger"}`;
+              }
+            }
 
       function renderStock() {
         const products = groupedProducts(state.stockMode, $("stockSearch").value.trim());
         document.querySelectorAll(".stock-mode").forEach((button) => { 
           const active = button.dataset.stockMode === state.stockMode; 
-          button.className = `stock-mode flex-1 rounded-xl px-4 py-2.5 text-sm font-bold ${active ? "bg-white text-slate-900 shadow-sm" : "text-slate-500"}`; 
+          button.className = `stock-mode flex-1 rounded-md px-4 py-2.5 text-sm font-medium ${active ? "bg-surface-card text-ink shadow-level1" : "text-mute"}`; 
         });
         $("stockSummary").textContent = products.length ? `${products.length} produk ditemukan di ${state.stockMode === "warehouse" ? "gudang" : "stok jual"}.` : "";
         $("stockCards").innerHTML = products.length ? products.map((product) => productCard(product, state.stockMode)).join("") : emptyState(`Belum ada produk di ${state.stockMode === "warehouse" ? "gudang" : "stok jual"}.`);
@@ -664,13 +1046,13 @@
       }
 
       function renderHistoryDates() {
-        $("historyDateFilters").innerHTML = `${recentDates().map((date, offset) => `<button data-history-date="${date}" class="shrink-0 rounded-xl px-4 py-2.5 text-sm font-bold ${state.historyDate === date ? "bg-slate-950 text-white" : "bg-white text-slate-600 ring-1 ring-slate-100"}">${dateLabel(date, offset)}</button>`).join("")}<button id="customDateButton" class="grid shrink-0 size-10 place-items-center rounded-xl bg-white text-slate-600 ring-1 ring-slate-100" aria-label="Pilih tanggal lain"><svg viewBox="0 0 24 24" class="size-5 fill-none stroke-current" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></button>`;
+        $("historyDateFilters").innerHTML = `${recentDates().map((date, offset) => `<button data-history-date="${date}" class="shrink-0 rounded-lg px-4 py-2.5 text-sm font-medium ${state.historyDate === date ? "bg-surface-deep text-on-dark" : "bg-surface-card text-charcoal ring-1 ring-hairline"}">${dateLabel(date, offset)}</button>`).join("")}<button id="customDateButton" class="grid shrink-0 size-10 place-items-center rounded-lg bg-surface-card text-charcoal ring-1 ring-hairline" aria-label="Pilih tanggal lain"><svg viewBox="0 0 24 24" class="size-5 fill-none stroke-current" stroke-width="2"><rect x="3" y="5" width="18" height="16" rx="2"/><path d="M16 3v4M8 3v4M3 10h18"/></svg></button>`;
       }
 
       function renderTransaction() {
         const products = groupedProducts("sale");
         const selectedProduct = products.find((product) => product.product_id === state.transactionProductId);
-        $("transactionCatalog").innerHTML = products.length ? products.map((product) => `<button data-transaction-product="${product.product_id}" class="overflow-hidden rounded-2xl border text-left ${product.product_id === state.transactionProductId ? "border-blue-600 ring-2 ring-blue-100" : "border-slate-100"}"><div class="flex gap-3 p-3">${productPhoto(product, "size-16 shrink-0 rounded-xl")}<div class="min-w-0"><p class="truncate font-bold">${escapeHtml(product.product_name)}</p><p class="mt-1 truncate text-xs text-slate-400">${escapeHtml(product.model)}</p><p class="mt-2 text-xs font-bold text-blue-600">${product.saleTotal} unit siap jual</p></div></div></button>`).join("") : `<p class="col-span-full rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Belum ada stok jual.</p>`;
+        $("transactionCatalog").innerHTML = products.length ? products.map((product) => `<button data-transaction-product="${product.product_id}" class="overflow-hidden rounded-lg border text-left ${product.product_id === state.transactionProductId ? "border-primary ring-2 ring-primary/20" : "border-hairline"}"><div class="flex gap-3 p-3">${productPhoto(product, "size-16 shrink-0 rounded-lg")}<div class="min-w-0"><p class="truncate font-medium">${escapeHtml(product.product_name)}</p><p class="mt-1 truncate text-xs text-ash">${escapeHtml(product.model)}</p><p class="mt-2 text-xs font-medium text-primary">${product.saleTotal} unit siap jual</p></div></div></button>`).join("") : `<p class="col-span-full rounded-lg bg-hairline/50 p-5 text-sm text-mute">Belum ada stok jual.</p>`;
         $("transactionSelection").innerHTML = selectedProduct ? transactionSelection(selectedProduct) : "";
         syncTransactionPaymentUI();
         updateTransactionSummary();
@@ -681,13 +1063,13 @@
         const color = colors.find((item) => item.color_id === state.transactionColorId) || colors[0];
         if (!state.transactionColorId && color) state.transactionColorId = color.color_id;
         const sizes = color.variants.filter((variant) => variant.sale_qty > 0);
-        return `<div class="rounded-2xl bg-slate-50 p-4"><p class="text-sm font-black">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${item.color_id === state.transactionColorId ? "border-blue-600 bg-blue-600 text-white" : "border-white bg-white text-slate-600"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-black">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${variant.id === state.transactionVariantId ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-slate-400">Warna ini belum punya stok jual.</span>`}</div></div>`;
+        return `<div class="rounded-lg bg-hairline/50 p-4"><p class="text-sm font-medium">Pilih warna</p><div class="mt-3 flex flex-wrap gap-2">${colors.map((item) => `<button data-transaction-color="${item.color_id}" class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${item.color_id === state.transactionColorId ? "border-primary bg-primary text-on-primary" : "border-hairline bg-surface-card text-charcoal"}">${productPhoto(item, "size-6 rounded-full")} ${escapeHtml(item.color)}</button>`).join("")}</div><p class="mt-5 text-sm font-medium">Pilih size</p><div class="mt-3 flex flex-wrap gap-2">${sizes.map((variant) => `<button data-transaction-variant="${variant.id}" class="rounded-lg border px-4 py-2 text-sm font-medium ${variant.id === state.transactionVariantId ? "border-surface-deep bg-surface-deep text-on-dark" : "border-hairline-strong bg-surface-card text-ink"}">${escapeHtml(variant.size)} <span class="ml-1 text-xs opacity-70">${variant.sale_qty}</span></button>`).join("") || `<span class="text-sm text-mute">Warna ini belum punya stok jual.</span>`}</div></div>`;
       }
 
       function syncTransactionPaymentUI() {
         document.querySelectorAll("[data-transaction-payment]").forEach((button) => {
           const active = button.dataset.transactionPayment === state.paymentMethod;
-          button.className = `rounded-xl px-3 py-3 text-xs font-bold ${active ? "bg-blue-600 text-white" : "bg-white/10 text-white"}`;
+          button.className = `rounded-lg px-3 py-3 text-xs font-medium ${active ? "bg-primary text-on-primary" : "bg-hairline/50 text-ink"}`;
         });
       }
 
@@ -701,7 +1083,7 @@
           return;
         }
         $("selectedVariantName").textContent = `${variant.product_name} · ${variant.color} / ${variant.size}`;
-        $("priceRange").innerHTML = `<strong>Stok tersedia: ${variant.sale_qty} unit</strong><br><span class="text-slate-400">Minimum ${rupiah(variant.minimum_price)} · normal ${rupiah(variant.normal_price)}</span>`;
+        $("priceRange").innerHTML = `<strong>Stok tersedia: ${variant.sale_qty} unit</strong><br><span class="text-ash">Minimum ${rupiah(variant.minimum_price)} · normal ${rupiah(variant.normal_price)}</span>`;
         $("transactionQty").disabled = false; 
         $("transactionQty").max = variant.sale_qty;
         $("transactionPrice").disabled = false; 
@@ -742,7 +1124,7 @@
         
         const records = state.transactions.filter((item) => item.created_at.slice(0, 10) === state.historyDate);
         renderHistoryDates();
-        $("historyCards").innerHTML = records.length ? records.map((item) => `<article class="flex items-center gap-3 rounded-3xl bg-white p-4 shadow-sm ring-1 ring-slate-100">${productPhoto(item, "size-16 shrink-0 rounded-2xl")}<div class="min-w-0 flex-1"><p class="truncate font-black">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-sm text-slate-500">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-2 text-xs text-slate-400">${escapeHtml(item.invoice_no)} · ${dateTime(item.created_at)}</p></div><div class="text-right"><p class="font-black">${rupiah(item.total)}</p><p class="mt-1 text-xs text-slate-400">${rupiah(item.unit_price)}/unit</p></div></article>`).join("") : emptyState("Belum ada transaksi pada tanggal ini.");
+        $("historyCards").innerHTML = records.length ? records.map((item) => `<article class="flex items-center gap-3 rounded-lg bg-surface-card p-4 shadow-level1 ring-1 ring-hairline">${productPhoto(item, "size-16 shrink-0 rounded-lg")}<div class="min-w-0 flex-1"><p class="truncate font-medium">${escapeHtml(item.product_name)} ${escapeHtml(item.model)}</p><p class="mt-1 text-sm text-mute">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-2 text-xs text-ash">${escapeHtml(item.invoice_no)} · ${dateTime(item.created_at)}</p></div><div class="text-right"><p class="font-medium">${rupiah(item.total)}</p><p class="mt-1 text-xs text-ash">${rupiah(item.unit_price)}/unit</p></div></article>`).join("") : emptyState("Belum ada transaksi pada tanggal ini.");
       }
 
       function cartTotal() { 
@@ -773,68 +1155,68 @@
         $("salesSheetContent").innerHTML = `
           <div class="flex items-start justify-between gap-3">
             <div>
-              <h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2>
-              <p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)}</p>
+              <h2 class="mt-1 text-heading-lg font-medium">${escapeHtml(product.product_name)}</h2>
+              <p class="mt-1 text-sm text-mute">${escapeHtml(product.model)}</p>
             </div>
             <div class="flex gap-2">
-              <button data-open-cart class="rounded-xl bg-slate-950 px-3 py-2 text-sm font-bold text-white">Keranjang ${state.cart.length}</button>
-              <button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button>
+              <button data-open-cart class="rounded-lg bg-surface-deep px-3 py-2 text-sm font-medium text-on-dark">Keranjang ${state.cart.length}</button>
+              <button data-close="salesSheet" class="grid size-10 place-items-center rounded-lg bg-hairline text-xl text-ash">×</button>
             </div>
           </div>
           <div class="mt-6">
-            <p class="text-sm font-black">Pilih warna</p>
+            <p class="text-sm font-medium">Pilih warna</p>
             <div class="mt-3 flex flex-wrap gap-2">
-              ${colors.map((color) => `<button data-sale-color="${color.color_id}" class="flex items-center gap-2 rounded-xl border px-3 py-2 text-sm font-bold ${color.color_id === state.saleColorId ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">${productPhoto(color, "size-6 rounded-full")} ${escapeHtml(color.color)}</button>`).join("")}
+              ${colors.map((color) => `<button data-sale-color="${color.color_id}" class="flex items-center gap-2 rounded-lg border px-3 py-2 text-sm font-medium ${color.color_id === state.saleColorId ? "border-primary bg-primary text-on-primary" : "border-hairline-strong bg-surface-card text-ink"}">${productPhoto(color, "size-6 rounded-full")} ${escapeHtml(color.color)}</button>`).join("")}
             </div>
           </div>
           <div class="mt-6">
-            <p class="text-sm font-black">Pilih size</p>
+            <p class="text-sm font-medium">Pilih size</p>
             <div class="mt-3 flex flex-wrap gap-2">
-              ${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-xl border px-4 py-2 text-sm font-bold ${item.id === state.saleVariantId ? "border-slate-950 bg-slate-950 text-white" : "border-slate-200 bg-white text-slate-700"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}
+              ${variants.map((item) => `<button data-sale-variant="${item.id}" class="rounded-lg border px-4 py-2 text-sm font-medium ${item.id === state.saleVariantId ? "border-surface-deep bg-surface-deep text-on-dark" : "border-hairline-strong bg-surface-card text-ink"}">${escapeHtml(item.size)} <span class="ml-1 text-xs opacity-70">${item.sale_qty}</span></button>`).join("")}
             </div>
           </div>
           ${variant ? `
-            <div class="mt-6 rounded-2xl bg-slate-50 p-4">
-              <p class="font-bold">${escapeHtml(variant.color)} · Size ${escapeHtml(variant.size)}</p>
-              <p class="mt-1 text-sm text-slate-500">Stok ${variant.sale_qty} · Harga ${rupiah(variant.minimum_price)} — ${rupiah(variant.normal_price)}</p>
+            <div class="mt-6 rounded-lg bg-hairline/50 p-4">
+              <p class="font-medium">${escapeHtml(variant.color)} · Size ${escapeHtml(variant.size)}</p>
+              <p class="mt-1 text-sm text-mute">Stok ${variant.sale_qty} · Harga ${rupiah(variant.minimum_price)} — ${rupiah(variant.normal_price)}</p>
               <div class="mt-4 grid gap-3 sm:grid-cols-2">
-                <label class="text-sm font-bold">Jumlah
-                  <input id="saleQty" type="number" min="1" max="${variant.sale_qty}" value="1" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" />
+                <label class="text-sm font-medium">Jumlah
+                  <input id="saleQty" type="number" min="1" max="${variant.sale_qty}" value="1" class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
                 </label>
-                <label class="text-sm font-bold">Harga jual
-                  <input id="salePrice" type="number" min="${variant.minimum_price}" max="${variant.normal_price}" value="${variant.normal_price}" class="mt-2 w-full rounded-xl border border-slate-200 bg-white px-3 py-3 outline-none focus:border-blue-500" />
+                <label class="text-sm font-medium">Harga jual
+                  <input id="salePrice" type="number" min="${variant.minimum_price}" max="${variant.normal_price}" value="${variant.normal_price}" class="mt-2 w-full rounded-lg border border-hairline-strong bg-surface-card px-3 py-3 outline-none focus:border-primary" />
                 </label>
               </div>
-              <button data-add-cart class="mt-4 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Masukkan keranjang</button>
+              <button data-add-cart class="mt-4 w-full rounded-lg bg-primary px-4 py-3 font-medium text-on-primary">+ Masukkan keranjang</button>
             </div>
-          ` : `<p class="mt-6 rounded-2xl bg-slate-50 p-4 text-sm text-slate-400">Pilih size untuk melanjutkan.</p>`}
+          ` : `<p class="mt-6 rounded-lg bg-hairline/50 p-4 text-sm text-mute">Pilih size untuk melanjutkan.</p>`}
         `;
       }
 
       function renderCartSheet() {
         $("salesSheetContent").innerHTML = `
           <div class="flex items-start justify-between gap-3">
-            <div><h2 class="mt-1 text-2xl font-black">Pesanan saat ini</h2></div>
-            <button data-close="salesSheet" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button>
+            <div><h2 class="mt-1 text-heading-lg font-medium">Pesanan saat ini</h2></div>
+            <button data-close="salesSheet" class="grid size-10 place-items-center rounded-lg bg-hairline text-xl text-ash">×</button>
           </div>
           ${state.cart.length ? `
             <div class="mt-6 space-y-3">
-              ${state.cart.map((item) => `<article class="flex items-center gap-3 rounded-2xl bg-slate-50 p-3">${productPhoto(item, "size-14 shrink-0 rounded-xl")}<div class="min-w-0 flex-1"><p class="truncate font-bold">${escapeHtml(item.product_name)}</p><p class="mt-1 text-xs text-slate-500">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-1 text-sm font-black">${rupiah(item.qty * item.unit_price)}</p></div><button data-remove-cart="${item.variant_id}" class="rounded-xl bg-white px-3 py-2 text-xs font-bold text-rose-600 ring-1 ring-slate-200">Hapus</button></article>`).join("")}
+              ${state.cart.map((item) => `<article class="flex items-center gap-3 rounded-lg bg-hairline/50 p-3">${productPhoto(item, "size-14 shrink-0 rounded-lg")}<div class="min-w-0 flex-1"><p class="truncate font-medium">${escapeHtml(item.product_name)}</p><p class="mt-1 text-xs text-mute">${escapeHtml(item.color)} · ${escapeHtml(item.size)} · ${item.qty} unit</p><p class="mt-1 text-sm font-medium">${rupiah(item.qty * item.unit_price)}</p></div><button data-remove-cart="${item.variant_id}" class="rounded-lg bg-surface-card px-3 py-2 text-xs font-medium text-danger ring-1 ring-hairline">Hapus</button></article>`).join("")}
             </div>
             <div class="mt-6">
-              <p class="text-sm font-black">Metode pembayaran</p>
+              <p class="text-sm font-medium">Metode pembayaran</p>
               <div class="mt-3 grid grid-cols-3 gap-2">
-                <button type="button" data-payment-method="cash" class="rounded-xl border px-3 py-3 text-xs font-bold ${state.paymentMethod === "cash" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">Cash</button>
-                <button type="button" data-payment-method="bank" class="rounded-xl border px-3 py-3 text-xs font-bold ${state.paymentMethod === "bank" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">Bank</button>
-                <button type="button" data-payment-method="wallet" class="rounded-xl border px-3 py-3 text-xs font-bold ${state.paymentMethod === "wallet" ? "border-blue-600 bg-blue-600 text-white" : "border-slate-200 bg-white text-slate-700"}">Wallet</button>
+                <button type="button" data-payment-method="cash" class="rounded-lg border px-3 py-3 text-xs font-medium ${state.paymentMethod === "cash" ? "border-primary bg-primary text-on-primary" : "border-hairline-strong bg-surface-card text-ink"}">Cash</button>
+                <button type="button" data-payment-method="bank" class="rounded-lg border px-3 py-3 text-xs font-medium ${state.paymentMethod === "bank" ? "border-primary bg-primary text-on-primary" : "border-hairline-strong bg-surface-card text-ink"}">Bank</button>
+                <button type="button" data-payment-method="wallet" class="rounded-lg border px-3 py-3 text-xs font-medium ${state.paymentMethod === "wallet" ? "border-primary bg-primary text-on-primary" : "border-hairline-strong bg-surface-card text-ink"}">Wallet</button>
               </div>
             </div>
-            <div class="mt-5 flex items-center justify-between border-y border-slate-200 py-4">
-              <span class="font-bold">Total</span>
-              <strong class="text-2xl font-black">${rupiah(cartTotal())}</strong>
+            <div class="mt-5 flex items-center justify-between border-y border-hairline py-4">
+              <span class="font-medium">Total</span>
+              <strong class="text-display-sm font-medium">${rupiah(cartTotal())}</strong>
             </div>
-            <button data-checkout-cart class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">Simpan transaksi</button>
-          ` : `<p class="mt-6 rounded-2xl bg-slate-50 p-5 text-sm text-slate-400">Keranjang masih kosong.</p>`}
+            <button data-checkout-cart class="mt-5 w-full rounded-lg bg-primary px-4 py-3 font-medium text-on-primary">Simpan transaksi</button>
+          ` : `<p class="mt-6 rounded-lg bg-hairline/50 p-5 text-sm text-mute">Keranjang masih kosong.</p>`}
         `;
       }
 
@@ -889,39 +1271,39 @@
         $("detailContent").innerHTML = `
           <div class="flex items-start justify-between gap-4">
             <div>
-              <h2 class="mt-1 text-2xl font-black">${escapeHtml(product.product_name)}</h2>
-              <p class="mt-1 text-sm text-slate-500">${escapeHtml(product.model)} · ${colors.length} warna</p>
+              <h2 class="mt-1 text-heading-lg font-medium">${escapeHtml(product.product_name)}</h2>
+              <p class="mt-1 text-sm text-mute">${escapeHtml(product.model)} · ${colors.length} warna</p>
             </div>
-            <button data-close="detailModal" class="grid size-10 place-items-center rounded-2xl bg-slate-100 text-xl text-slate-500">×</button>
+            <button data-close="detailModal" class="grid size-10 place-items-center rounded-lg bg-hairline text-xl text-ash">×</button>
           </div>
-          <div class="mt-5 overflow-hidden rounded-3xl border border-slate-100 bg-white">
-            <div class="aspect-[16/8] bg-slate-100">${productPhoto(product, "h-full w-full")}</div>
+          <div class="mt-5 overflow-hidden rounded-lg border border-hairline bg-surface-card">
+            <div class="aspect-[16/8] bg-background-bone">${productPhoto(product, "h-full w-full")}</div>
           </div>
           <div class="mt-5 space-y-3">
             ${colors.map(c => `
-              <section class="rounded-3xl border border-slate-100 bg-white p-4">
+              <section class="rounded-lg border border-hairline bg-surface-card p-4">
                 <div class="flex items-center justify-between gap-3">
                   <div class="flex items-center gap-3">
                     ${colorDot(c.color, "size-9", c.color_hex)}
                     <div>
-                      <h3 class="font-black">${escapeHtml(c.color)}</h3>
-                      <p class="text-xs text-slate-400">${c.variants.length} size · ${c.variants.reduce((s, v) => s + v.warehouse_qty, 0)} unit gudang</p>
+                      <h3 class="font-medium">${escapeHtml(c.color)}</h3>
+                      <p class="text-xs text-ash">${c.variants.length} size · ${c.variants.reduce((s, v) => s + v.warehouse_qty, 0)} unit gudang</p>
                     </div>
                   </div>
-                  <button data-add-color-size="${c.color_id}" data-product-id="${product.product_id}" class="rounded-xl bg-blue-50 px-3 py-2 text-xs font-bold text-blue-700">+ Size</button>
+                  <button data-add-color-size="${c.color_id}" data-product-id="${product.product_id}" class="rounded-lg bg-primary-bg px-3 py-2 text-xs font-medium text-primary">+ Size</button>
                 </div>
                 <div class="mt-4 space-y-2">
                   ${c.variants.map(v => `
-                    <div class="flex items-center justify-between rounded-2xl bg-slate-50 px-3 py-2">
+                    <div class="flex items-center justify-between rounded-lg bg-hairline/50 px-3 py-2">
                       <div>
-                        <p class="font-bold">Size ${escapeHtml(v.size)}</p>
-                        <p class="text-xs text-slate-400">Gudang ${v.warehouse_qty} · Jual ${v.sale_qty}</p>
-                        <p class="mt-1 text-xs font-bold text-slate-500">HPP ${rupiah(v.hpp)} · Normal ${rupiah(v.normal_price)}</p>
+                        <p class="font-medium">Size ${escapeHtml(v.size)}</p>
+                        <p class="text-xs text-ash">Gudang ${v.warehouse_qty} · Jual ${v.sale_qty}</p>
+                        <p class="mt-1 text-xs font-medium text-mute">HPP ${rupiah(v.hpp)} · Normal ${rupiah(v.normal_price)}</p>
                       </div>
                       <div class="flex gap-1">
-                        <button data-edit-variant="${v.id}" class="rounded-xl bg-white px-2 py-1.5 text-xs font-bold text-blue-600 ring-1 ring-slate-200">Edit</button>
-                        <button data-transfer-variant="${v.id}" class="rounded-xl bg-blue-600 px-2 py-1.5 text-xs font-bold text-white">Pindah</button>
-                        <button data-delete-variant="${v.id}" class="rounded-xl bg-rose-50 px-2 py-1.5 text-xs font-bold text-rose-600">Hapus</button>
+                        <button data-edit-variant="${v.id}" class="rounded-lg bg-surface-card px-2 py-1.5 text-xs font-medium text-primary ring-1 ring-hairline">Edit</button>
+                        <button data-transfer-variant="${v.id}" class="rounded-lg bg-primary px-2 py-1.5 text-xs font-medium text-on-primary">Pindah</button>
+                        <button data-delete-variant="${v.id}" class="rounded-lg bg-danger-light-bg px-2 py-1.5 text-xs font-medium text-danger">Hapus</button>
                       </div>
                     </div>
                   `).join("")}
@@ -930,8 +1312,8 @@
             `).join("")}
           </div>
           <div class="mt-5 flex gap-2">
-            <button data-delete-product="${product.product_id}" class="rounded-2xl bg-rose-50 px-4 py-3 text-xs font-bold text-rose-600">Hapus produk</button>
-            <button data-add-to-product="${product.product_id}" class="mt-5 w-full rounded-2xl bg-blue-600 px-4 py-3 font-bold text-white">+ Tambah warna / size</button>
+            <button data-delete-product="${product.product_id}" class="rounded-lg bg-danger-light-bg px-4 py-3 text-xs font-medium text-danger">Hapus produk</button>
+            <button data-add-to-product="${product.product_id}" class="w-full rounded-lg bg-primary px-4 py-3 font-medium text-on-primary">+ Tambah warna / size</button>
           </div>
         `;
         showModal("detailModal");
@@ -959,11 +1341,11 @@
       }
 
       function sizeRow() { 
-        return `<div class="size-row grid gap-2 rounded-2xl bg-white p-3 sm:grid-cols-[.7fr_1fr_1fr_1fr_1fr_auto]"><input data-field="size" required placeholder="Size" class="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /><input data-field="warehouse_qty" type="number" min="0" required placeholder="Stok" class="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /><input data-field="hpp" type="number" min="0" required placeholder="HPP" class="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /><input data-field="normal_price" type="number" min="0" required placeholder="Harga normal" class="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /><input data-field="minimum_price" type="number" min="0" required placeholder="Harga min." class="rounded-xl border border-slate-200 px-3 py-2 text-sm outline-none focus:border-blue-500" /><button type="button" data-remove-size class="rounded-xl bg-rose-50 px-3 text-sm font-bold text-rose-600">×</button></div>`; 
+        return `<div class="size-row grid gap-2 rounded-lg bg-surface-card p-3 sm:grid-cols-[.7fr_1fr_1fr_1fr_1fr_auto]"><input data-field="size" required placeholder="Size" class="rounded-lg border border-hairline-strong bg-surface-card px-3 py-2 text-sm outline-none focus:border-primary" /><input data-field="warehouse_qty" type="number" min="0" required placeholder="Stok" class="rounded-lg border border-hairline-strong bg-surface-card px-3 py-2 text-sm outline-none focus:border-primary" /><input data-field="hpp" type="number" min="0" required placeholder="HPP" class="rounded-lg border border-hairline-strong bg-surface-card px-3 py-2 text-sm outline-none focus:border-primary" /><input data-field="normal_price" type="number" min="0" required placeholder="Harga normal" class="rounded-lg border border-hairline-strong bg-surface-card px-3 py-2 text-sm outline-none focus:border-primary" /><input data-field="minimum_price" type="number" min="0" required placeholder="Harga min." class="rounded-lg border border-hairline-strong bg-surface-card px-3 py-2 text-sm outline-none focus:border-primary" /><button type="button" data-remove-size class="rounded-lg bg-danger-light-bg px-3 text-sm font-medium text-danger">×</button></div>`; 
       }
       
       function colorGroup() { 
-        return `<section class="color-group rounded-3xl border border-slate-100 bg-slate-50 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0 flex-1"><p class="text-sm font-bold text-slate-700">Pilih warna</p><div data-color-picker class="mt-2 flex flex-wrap gap-2">${colorPickerHtml()}</div><input data-field="color" type="hidden" required /><input data-field="color_hex" type="hidden" /><div data-custom-slot></div></div><button type="button" data-remove-color class="rounded-xl bg-rose-50 px-3 py-2 text-sm font-bold text-rose-600">Hapus</button></div><div class="mt-4"><div class="mb-2 flex items-center justify-between"><p class="text-xs font-black tracking-wide text-slate-500">SIZE DAN HARGA</p><button type="button" data-add-size class="text-sm font-bold text-blue-600">+ Size</button></div><div class="size-list space-y-2">${sizeRow()}</div></div></section>`; 
+        return `<section class="color-group rounded-lg border border-hairline bg-hairline/50 p-4"><div class="flex items-start justify-between gap-3"><div class="min-w-0 flex-1"><p class="text-sm font-medium text-ink">Pilih warna</p><div data-color-picker class="mt-2 flex flex-wrap gap-2">${colorPickerHtml()}</div><input data-field="color" type="hidden" required /><input data-field="color_hex" type="hidden" /><div data-custom-slot></div></div><button type="button" data-remove-color class="rounded-lg bg-danger-light-bg px-3 py-2 text-sm font-medium text-danger">Hapus</button></div><div class="mt-4"><div class="mb-2 flex items-center justify-between"><p class="text-xs font-medium tracking-wide text-mute">SIZE DAN HARGA</p><button type="button" data-add-size class="text-sm font-medium text-primary">+ Size</button></div><div class="size-list space-y-2">${sizeRow()}</div></div></section>`; 
       }
       
       function resetColorGroups() { $("colorGroups").innerHTML = colorGroup(); }
@@ -1173,8 +1555,8 @@
           group.querySelector('[data-field="color"]').value = pick.dataset.pickColor;
           group.querySelector('[data-field="color_hex"]').value = pick.dataset.pickHex;
           group.querySelector('[data-custom-slot]').innerHTML = "";
-          group.querySelectorAll("[data-pick-color]").forEach(b => b.classList.remove("border-blue-600", "bg-blue-50", "text-blue-700", "ring-2", "ring-blue-100"));
-          pick.classList.add("border-blue-600", "bg-blue-50", "text-blue-700", "ring-2", "ring-blue-100");
+          group.querySelectorAll("[data-pick-color]").forEach(b => b.classList.remove("border-primary", "bg-primary-bg", "text-primary", "ring-2", "ring-primary/20"));
+          pick.classList.add("border-primary", "bg-primary-bg", "text-primary", "ring-2", "ring-primary/20");
         }
         
         if (event.target.closest("[data-custom-color]")) {
