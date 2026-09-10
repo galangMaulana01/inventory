@@ -29,6 +29,12 @@ CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
 CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
 USE_CLOUDINARY = all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET])
 
+# Login v1 — kredensial statis di server (env var kalau ada, fallback default).
+# Belum menyentuh database sama sekali; ganti nanti kalau sudah ada sistem user.
+ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
+ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "stokku123")
+ACTIVE_TOKENS: set = set()
+
 DATA_DIR = Path(os.getenv("STOKKU_DATA_DIR", "/tmp/stokku_data"))
 UPLOAD_DIR = Path(os.getenv("STOKKU_UPLOAD_DIR", "/tmp/stokku_uploads"))
 
@@ -118,6 +124,13 @@ class BatchTransactionInput(BaseModel):
 class TransferInput(BaseModel):
     variant_id: str
     qty: int = Field(gt=0)
+
+class LoginInput(BaseModel):
+    username: str = Field(min_length=1)
+    password: str = Field(min_length=1)
+
+class LogoutInput(BaseModel):
+    token: Optional[str] = None
 
 # ============================================================
 # SERIALIZATION / HELPERS
@@ -285,6 +298,23 @@ if USE_MONGO:
         db.stock_moves.create_index([("created_at", -1)], name="stock_moves_created_at")
     except Exception as exc:
         print(f"Index warning: {exc}")
+
+# ============================================================
+# AUTH (v1 — kredensial statis di server, belum ke database)
+# ============================================================
+@app.post("/api/login")
+async def login(payload: LoginInput):
+    if payload.username.strip() != ADMIN_USERNAME or payload.password != ADMIN_PASSWORD:
+        raise HTTPException(status_code=401, detail="Username atau sandi salah")
+    token = secrets.token_hex(24)
+    ACTIVE_TOKENS.add(token)
+    return {"token": token, "username": ADMIN_USERNAME, "message": "Login berhasil"}
+
+@app.post("/api/logout")
+async def logout(payload: LogoutInput):
+    if payload.token:
+        ACTIVE_TOKENS.discard(payload.token)
+    return {"message": "Berhasil keluar"}
 
 # ============================================================
 # HEALTH / DASHBOARD
