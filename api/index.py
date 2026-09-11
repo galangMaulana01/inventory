@@ -12,6 +12,7 @@ import time
 import secrets
 import base64
 import hmac
+import uuid
 
 try:
     from pymongo import MongoClient
@@ -72,7 +73,7 @@ app.add_middleware(
 @app.middleware("http")
 async def auth_middleware(request: Request, call_next):
     path = request.url.path
-    if path.startswith("/api/") and path not in {"/api/login", "/api/logout", "/api/health"}:
+    if request.method != "OPTIONS" and path.startswith("/api/") and path not in {"/api/login", "/api/logout", "/api/health"}:
         try:
             require_auth(request)
         except HTTPException as exc:
@@ -257,7 +258,7 @@ def find_variant(variant_id: str):
     return next((v for v in get_variants() if str(v.get("_id", v.get("id"))) == str(variant_id)), None)
 
 def invoice_no():
-    return f"INV-{now_utc().strftime('%Y%m%d-%H%M%S')}-{secrets.token_hex(2).upper()}"
+    return f"INV-{now_utc().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
 
 def validate_price(variant, unit_price):
     minimum = int(variant.get("minimum_price", 0))
@@ -893,6 +894,7 @@ def create_one_transaction(item: BatchItem, payment_method: str, line_discount: 
         if result.modified_count != 1:
             raise HTTPException(status_code=400, detail="Stok jual berubah atau tidak mencukupi")
         db.transactions.insert_one(doc, session=session)
+        add_stock_move_session(item.variant_id, "sale", "sold", item.qty, f"Transaksi {invoice}", session)
     else:
         data = load_json("variants", {"items": []})
         found = next(v for v in data["items"] if str(v.get("id")) == item.variant_id and not v.get("deleted"))
@@ -935,8 +937,6 @@ async def create_batch_transaction(batch: BatchTransactionInput):
             with mongo_client.start_session() as session:
                 with session.start_transaction():
                     docs = [create_one_transaction(item, payment_method, line_discounts[i], invoice, session) for i, (item, _) in enumerate(prepared)]
-                    for d, (item, _) in zip(docs, prepared):
-                        add_stock_move_session(d, item.variant_id, "sale", "sold", item.qty, f"Transaksi {invoice}", session)
         except Exception as exc:
             if isinstance(exc, HTTPException):
                 raise
