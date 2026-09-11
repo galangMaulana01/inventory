@@ -1,15 +1,17 @@
-from fastapi import FastAPI, HTTPException, UploadFile, Form, Query
-from fastapi.responses import FileResponse
+from fastapi import FastAPI, HTTPException, UploadFile, Form, Query, Request
+from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel, Field
 from typing import Optional, List, Any
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from pathlib import Path
 import os
 import json
 import hashlib
 import time
 import secrets
+import base64
+import hmac
 
 try:
     from pymongo import MongoClient
@@ -33,7 +35,8 @@ USE_CLOUDINARY = all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_
 # Belum menyentuh database sama sekali; ganti nanti kalau sudah ada sistem user.
 ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
 ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "stokku123")
-ACTIVE_TOKENS: set = set()
+AUTH_SECRET = os.getenv("AUTH_SECRET") or hashlib.sha256(ADMIN_PASSWORD.encode("utf-8")).hexdigest()
+AUTH_TTL_SECONDS = int(os.getenv("AUTH_TTL_SECONDS", str(60 * 60 * 12)))
 
 DATA_DIR = Path(os.getenv("STOKKU_DATA_DIR", "/tmp/stokku_data"))
 UPLOAD_DIR = Path(os.getenv("STOKKU_UPLOAD_DIR", "/tmp/stokku_uploads"))
@@ -65,6 +68,16 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    path = request.url.path
+    if path.startswith("/api/") and path not in {"/api/login", "/api/logout", "/api/health"}:
+        try:
+            require_auth(request)
+        except HTTPException as exc:
+            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+    return await call_next(request)
 
 # ============================================================
 # MODELS
@@ -120,6 +133,7 @@ class BatchItem(BaseModel):
 class BatchTransactionInput(BaseModel):
     items: List[BatchItem] = Field(min_length=1)
     payment_method: Optional[str] = "cash"
+    discount: int = Field(default=0, ge=0)
 
 class TransferInput(BaseModel):
     variant_id: str
@@ -204,7 +218,7 @@ def get_colors():
 
 def get_transactions():
     if USE_MONGO:
-        return list(db.transactions.find().sort("created_at", -1).limit(200))
+        return list(db.transactions.find().sort("created_at", -1).limit(5000))
     return load_json("transactions", {"items": []}).get("items", [])
 
 def product_map():
@@ -276,6 +290,36 @@ def add_stock_move(variant_id, from_type, to_type, qty, notes=""):
         save_json("stock_moves", data)
 
 # ============================================================
+# AUTH HELPERS
+# ============================================================
+def _b64(value: bytes) -> str:
+    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
+
+def _make_token(username: str) -> str:
+    payload = {"u": username, "exp": int(time.time()) + AUTH_TTL_SECONDS}
+    raw = _b64(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
+    sig = _b64(hmac.new(AUTH_SECRET.encode("utf-8"), raw.encode("ascii"), hashlib.sha256).digest())
+    return f"{raw}.{sig}"
+
+def _verify_token(token: str) -> bool:
+    try:
+        raw, sig = token.split(".", 1)
+        expected = _b64(hmac.new(AUTH_SECRET.encode("utf-8"), raw.encode("ascii"), hashlib.sha256).digest())
+        if not hmac.compare_digest(sig, expected):
+            return False
+        padding = "=" * (-len(raw) % 4)
+        payload = json.loads(base64.urlsafe_b64decode((raw + padding).encode("ascii")))
+        return payload.get("u") == ADMIN_USERNAME and int(payload.get("exp", 0)) > int(time.time())
+    except Exception:
+        return False
+
+def require_auth(request: Request):
+    header = request.headers.get("authorization", "")
+    scheme, _, token = header.partition(" ")
+    if scheme.lower() != "bearer" or not _verify_token(token):
+        raise HTTPException(status_code=401, detail="Sesi login tidak valid atau sudah berakhir")
+
+# ============================================================
 # DB INDEXES
 # ============================================================
 if USE_MONGO:
@@ -306,14 +350,11 @@ if USE_MONGO:
 async def login(payload: LoginInput):
     if payload.username.strip() != ADMIN_USERNAME or payload.password != ADMIN_PASSWORD:
         raise HTTPException(status_code=401, detail="Username atau sandi salah")
-    token = secrets.token_hex(24)
-    ACTIVE_TOKENS.add(token)
+    token = _make_token(ADMIN_USERNAME)
     return {"token": token, "username": ADMIN_USERNAME, "message": "Login berhasil"}
 
 @app.post("/api/logout")
 async def logout(payload: LogoutInput):
-    if payload.token:
-        ACTIVE_TOKENS.discard(payload.token)
     return {"message": "Berhasil keluar"}
 
 # ============================================================
@@ -332,26 +373,23 @@ async def dashboard():
     products = get_products()
     variants = get_variants()
     transactions = get_transactions()
-    today = now_utc().date()
+    local_today = datetime.now(timezone(timedelta(hours=7))).date()
 
     today_trans = []
     for t in transactions:
         dt = parse_datetime(t.get("created_at"))
-        if dt and dt.date() == today:
-            today_trans.append(t)
+        if dt:
+            if dt.tzinfo is None:
+                dt = dt.replace(tzinfo=timezone.utc)
+            if dt.astimezone(timezone(timedelta(hours=7))).date() == local_today:
+                today_trans.append(t)
 
     warehouse_qty = sum(int(v.get("warehouse_qty", 0) or 0) for v in variants)
     sale_qty = sum(int(v.get("sale_qty", 0) or 0) for v in variants)
     sold_qty = sum(int(t.get("qty", 0) or 0) for t in today_trans)
-    revenue = sum(int(t.get("qty", 0) or 0) * int(t.get("unit_price", 0) or 0) for t in today_trans)
+    revenue = sum(int(t.get("total_price", t.get("total", 0)) or 0) for t in today_trans)
     capital = sum(int(v.get("hpp", 0) or 0) * int(v.get("warehouse_qty", 0) or 0) for v in variants)
-
-    hpp_by_variant = {str(v.get("_id", v.get("id"))): int(v.get("hpp", 0) or 0) for v in variants}
-    profit = sum(
-        int(t.get("qty", 0) or 0)
-        * (int(t.get("unit_price", 0) or 0) - hpp_by_variant.get(str(t.get("variant_id")), int(t.get("hpp", 0) or 0)))
-        for t in today_trans
-    )
+    profit = sum(int(t.get("profit", 0) or 0) for t in today_trans)
 
     enriched_transactions = []
     products_by_id = product_map()
@@ -372,32 +410,17 @@ async def dashboard():
         pid = str(t.get("product_id", ""))
         entry = product_sales.setdefault(pid, {"product_id": pid, "sold_qty": 0, "revenue": 0})
         entry["sold_qty"] += int(t.get("qty", 0) or 0)
-        entry["revenue"] += int(t.get("qty", 0) or 0) * int(t.get("unit_price", 0) or 0)
+        entry["revenue"] += int(t.get("total_price", t.get("total", 0)) or 0)
 
     top = []
     for entry in sorted(product_sales.values(), key=lambda x: (-x["sold_qty"], -x["revenue"])):
         p = products_by_id.get(entry["product_id"], {})
-        top.append({
-            **entry,
-            "product_name": p.get("name", ""),
-            "model": p.get("model", ""),
-            "image_url": p.get("image_url"),
-        })
+        top.append({**entry, "product_name": p.get("name", ""), "model": p.get("model", ""), "image_url": p.get("image_url")})
 
     return json_safe({
-        "total_products": len(products),
-        "total_variants": len(variants),
-        "warehouse_qty": warehouse_qty,
-        "sale_qty": sale_qty,
-        "sold_qty_today": sold_qty,
-        "revenue_today": revenue,
-        "profit_today": profit,
-        "transactions_today": len(today_trans),
-        "transaction_count_today": len(today_trans),
-        "total_capital": capital,
-        "capital": capital,
-        "recent_transactions": recent,
-        "top_products": top,
+        "total_products": len(products), "total_variants": len(variants), "warehouse_qty": warehouse_qty, "sale_qty": sale_qty,
+        "sold_qty_today": sold_qty, "revenue_today": revenue, "profit_today": profit, "transactions_today": len(today_trans),
+        "transaction_count_today": len(today_trans), "total_capital": capital, "capital": capital, "recent_transactions": recent, "top_products": top,
     })
 
 # ============================================================
@@ -815,76 +838,32 @@ async def transfer_stock(transfer: TransferInput):
 # ============================================================
 # TRANSACTIONS
 # ============================================================
-def create_one_transaction(item: BatchItem, payment_method: str):
-    payment_method = validate_payment_method(payment_method)
-    variant = find_variant(item.variant_id)
-    if not variant:
-        raise HTTPException(status_code=404, detail=f"Varian {item.variant_id} tidak ditemukan")
-    if int(variant.get("sale_qty", 0)) < item.qty:
-        raise HTTPException(status_code=400, detail=f"Stok jual hanya {variant.get('sale_qty', 0)} unit")
-    validate_price(variant, item.unit_price)
 
+def add_stock_move_session(variant_id, from_type, to_type, qty, notes, session):
+    db.stock_moves.insert_one({"variant_id": oid(variant_id), "from_type": from_type, "to_type": to_type, "qty": int(qty), "notes": notes, "created_at": now_utc()}, session=session)
+def _build_transaction_doc(item: BatchItem, variant, payment_method: str, line_discount: int, invoice: str):
     products = product_map()
     product = products.get(str(variant.get("product_id")), {})
     trans_id = ObjectId() if USE_MONGO else secrets.token_hex(12)
     created = now_utc()
-    doc = {
-        "_id": trans_id if USE_MONGO else None,
-        "id": str(trans_id),
-        "invoice_no": invoice_no(),
-        "variant_id": oid(item.variant_id) if USE_MONGO else item.variant_id,
-        "product_id": variant.get("product_id"),
-        "color": variant.get("color", ""),
-        "size": variant.get("size", ""),
-        "qty": item.qty,
-        "unit_price": item.unit_price,
-        "total_price": item.qty * item.unit_price,
-        "total": item.qty * item.unit_price,
-        "hpp": int(variant.get("hpp", 0)),
-        "profit": item.qty * (item.unit_price - int(variant.get("hpp", 0))),
-        "payment_method": payment_method or "cash",
-        "product_name": product.get("name", ""),
-        "model": product.get("model", ""),
-        "image_url": product.get("image_url"),
-        "created_at": created,
+    gross = item.qty * item.unit_price
+    total = gross - int(line_discount)
+    hpp = int(variant.get("hpp", 0))
+    return {
+        "_id": trans_id if USE_MONGO else None, "id": str(trans_id), "invoice_no": invoice,
+        "variant_id": oid(item.variant_id) if USE_MONGO else item.variant_id, "product_id": variant.get("product_id"),
+        "color": variant.get("color", ""), "size": variant.get("size", ""), "qty": item.qty,
+        "unit_price": item.unit_price, "gross_total": gross, "discount": int(line_discount), "total_price": total, "total": total,
+        "hpp": hpp, "profit": total - item.qty * hpp, "payment_method": payment_method,
+        "product_name": product.get("name", ""), "model": product.get("model", ""), "image_url": product.get("image_url"), "created_at": created,
     }
-    if USE_MONGO:
-        result = db.variants.update_one(
-            {"_id": oid(item.variant_id), "deleted": {"$ne": True}, "sale_qty": {"$gte": item.qty}},
-            {"$inc": {"sale_qty": -item.qty}},
-        )
-        if result.modified_count != 1:
-            raise HTTPException(status_code=400, detail="Stok jual berubah atau tidak mencukupi")
-        db.transactions.insert_one(doc)
-    else:
-        data = load_json("variants", {"items": []})
-        found = next(v for v in data["items"] if str(v.get("id")) == item.variant_id and not v.get("deleted"))
-        found["sale_qty"] = int(found.get("sale_qty", 0)) - item.qty
-        save_json("variants", data)
-        doc["created_at"] = created.isoformat()
-        doc.pop("_id", None)
-        save_json("transactions", {"items": load_json("transactions", {"items": []}).get("items", []) + [json_safe(doc)]})
-    add_stock_move(item.variant_id, "sale", "sold", item.qty, f"Transaksi {doc['invoice_no']}")
-    return json_safe(doc)
 
-@app.post("/api/transactions")
-async def create_transaction(transaction: TransactionInput):
-    transaction.payment_method = validate_payment_method(transaction.payment_method)
-    item = BatchItem(variant_id=transaction.variant_id, qty=transaction.qty, unit_price=transaction.unit_price)
-    doc = create_one_transaction(item, transaction.payment_method or "cash")
-    return {"id": doc["id"], "invoice_no": doc["invoice_no"], "message": "Transaksi berhasil dicatat", "profit": doc["profit"]}
-
-@app.post("/api/transactions/batch")
-async def create_batch_transaction(batch: BatchTransactionInput):
-    batch.payment_method = validate_payment_method(batch.payment_method)
-    # Validate the whole cart first. This prevents a partial cart from being silently accepted.
-    if len(batch.items) > 100:
-        raise HTTPException(status_code=400, detail="Maksimal 100 item per transaksi")
-    seen = set()
-    for item in batch.items:
-        key = (item.variant_id, item.unit_price)
+def _validate_batch_items(items, requested_discount):
+    seen = set(); prepared = []; max_discount = 0; subtotal = 0
+    for item in items:
+        key = item.variant_id
         if key in seen:
-            raise HTTPException(status_code=400, detail="Item duplikat di keranjang")
+            raise HTTPException(status_code=400, detail="Varian duplikat di keranjang")
         seen.add(key)
         variant = find_variant(item.variant_id)
         if not variant:
@@ -892,25 +871,88 @@ async def create_batch_transaction(batch: BatchTransactionInput):
         if int(variant.get("sale_qty", 0)) < item.qty:
             raise HTTPException(status_code=400, detail=f"Stok jual {variant.get('color','')} {variant.get('size','')} tidak mencukupi")
         validate_price(variant, item.unit_price)
+        subtotal += item.qty * item.unit_price
+        max_discount += item.qty * max(0, item.unit_price - int(variant.get("minimum_price", 0)))
+        prepared.append((item, variant))
+    if requested_discount > max_discount:
+        raise HTTPException(status_code=400, detail=f"Diskon maksimal adalah {max_discount}")
+    return prepared, subtotal, max_discount
+
+def create_one_transaction(item: BatchItem, payment_method: str, line_discount: int = 0, invoice: str | None = None, session=None):
+    payment_method = validate_payment_method(payment_method)
+    variant = find_variant(item.variant_id)
+    if not variant:
+        raise HTTPException(status_code=404, detail=f"Varian {item.variant_id} tidak ditemukan")
+    if int(variant.get("sale_qty", 0)) < item.qty:
+        raise HTTPException(status_code=400, detail=f"Stok jual hanya {variant.get('sale_qty', 0)} unit")
+    validate_price(variant, item.unit_price)
+    invoice = invoice or invoice_no()
+    doc = _build_transaction_doc(item, variant, payment_method, line_discount, invoice)
+    if USE_MONGO:
+        result = db.variants.update_one({"_id": oid(item.variant_id), "deleted": {"$ne": True}, "sale_qty": {"$gte": item.qty}}, {"$inc": {"sale_qty": -item.qty}}, session=session)
+        if result.modified_count != 1:
+            raise HTTPException(status_code=400, detail="Stok jual berubah atau tidak mencukupi")
+        db.transactions.insert_one(doc, session=session)
+    else:
+        data = load_json("variants", {"items": []})
+        found = next(v for v in data["items"] if str(v.get("id")) == item.variant_id and not v.get("deleted"))
+        if int(found.get("sale_qty", 0)) < item.qty:
+            raise HTTPException(status_code=400, detail="Stok jual berubah atau tidak mencukupi")
+        found["sale_qty"] = int(found.get("sale_qty", 0)) - item.qty
+        save_json("variants", data)
+        doc["created_at"] = doc["created_at"].isoformat(); doc.pop("_id", None)
+        txs=load_json("transactions", {"items": []}); txs["items"].append(json_safe(doc)); save_json("transactions", txs)
+    if USE_MONGO and session is not None:
+        pass
+    else:
+        add_stock_move(item.variant_id, "sale", "sold", item.qty, f"Transaksi {invoice}")
+    return json_safe(doc)
+
+@app.post("/api/transactions")
+async def create_transaction(transaction: TransactionInput):
+    transaction.payment_method = validate_payment_method(transaction.payment_method)
+    item = BatchItem(variant_id=transaction.variant_id, qty=transaction.qty, unit_price=transaction.unit_price)
+    doc = create_one_transaction(item, transaction.payment_method or "cash")
+    return {"id": doc["id"], "invoice_no": doc["invoice_no"], "message": "Transaksi berhasil dicatat", "profit": doc["profit"], "total": doc["total"]}
+
+@app.post("/api/transactions/batch")
+async def create_batch_transaction(batch: BatchTransactionInput):
+    payment_method = validate_payment_method(batch.payment_method)
+    if len(batch.items) > 100:
+        raise HTTPException(status_code=400, detail="Maksimal 100 item per transaksi")
+    prepared, subtotal, max_discount = _validate_batch_items(batch.items, batch.discount)
+    remaining = int(batch.discount)
+    line_discounts = []
+    for item, variant in prepared:
+        line_cap = item.qty * max(0, item.unit_price - int(variant.get("minimum_price", 0)))
+        line_discount = min(remaining, line_cap)
+        remaining -= line_discount
+        line_discounts.append(line_discount)
+    invoice = invoice_no()
 
     if USE_MONGO:
-        # Mongo transactions may not be available on every deployment/topology.
-        # Sequential atomic decrements still prevent overselling.
-        docs = [create_one_transaction(item, batch.payment_method or "cash") for item in batch.items]
+        try:
+            with mongo_client.start_session() as session:
+                with session.start_transaction():
+                    docs = [create_one_transaction(item, payment_method, line_discounts[i], invoice, session) for i, (item, _) in enumerate(prepared)]
+                    for d, (item, _) in zip(docs, prepared):
+                        add_stock_move_session(d, item.variant_id, "sale", "sold", item.qty, f"Transaksi {invoice}", session)
+        except Exception as exc:
+            if isinstance(exc, HTTPException):
+                raise
+            raise HTTPException(status_code=500, detail=f"Checkout gagal dan seluruh perubahan dibatalkan: {exc}")
     else:
-        docs = [create_one_transaction(item, batch.payment_method or "cash") for item in batch.items]
-
-    invoice = docs[0]["invoice_no"] if docs else invoice_no()
-    return {
-        "invoice_no": invoice,
-        "message": f"{len(docs)} item transaksi berhasil dicatat",
-        "items": docs,
-        "total": sum(int(d["total"]) for d in docs),
-        "profit": sum(int(d["profit"]) for d in docs),
-    }
+        # JSON fallback has no database transaction primitive; use a snapshot and restore on failure.
+        snapshot = {name: load_json(name, {"items": []}) for name in ("variants", "transactions", "stock_moves")}
+        try:
+            docs = [create_one_transaction(item, payment_method, line_discounts[i], invoice) for i, (item, _) in enumerate(prepared)]
+        except Exception:
+            for name, data in snapshot.items(): save_json(name, data)
+            raise
+    return {"invoice_no": invoice, "message": f"{len(docs)} item transaksi berhasil dicatat", "items": docs, "total": sum(int(d["total"]) for d in docs), "discount": batch.discount, "subtotal": subtotal, "profit": sum(int(d["profit"]) for d in docs)}
 
 @app.get("/api/transactions")
-async def list_transactions(limit: int = Query(100, ge=1, le=200)):
+async def list_transactions(limit: int = Query(100, ge=1, le=5000)):
     transactions = get_transactions()
     products = product_map()
     output = []
