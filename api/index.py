@@ -220,7 +220,9 @@ def get_colors():
 def get_transactions():
     if USE_MONGO:
         return list(db.transactions.find().sort("created_at", -1).limit(5000))
-    return load_json("transactions", {"items": []}).get("items", [])
+    items = load_json("transactions", {"items": []}).get("items", [])
+    items.sort(key=lambda t: str(t.get("created_at", "")), reverse=True)
+    return items[:5000]
 
 def product_map():
     return {str(p.get("_id", p.get("id"))): p for p in get_products()}
@@ -860,21 +862,33 @@ def _build_transaction_doc(item: BatchItem, variant, payment_method: str, line_d
     }
 
 def _validate_batch_items(items, requested_discount):
-    seen = set(); prepared = []; max_discount = 0; subtotal = 0
+    prepared = []; max_discount = 0; subtotal = 0; qty_by_variant = {}
+    variants_by_id = {}
     for item in items:
-        key = item.variant_id
-        if key in seen:
-            raise HTTPException(status_code=400, detail="Varian duplikat di keranjang")
-        seen.add(key)
-        variant = find_variant(item.variant_id)
-        if not variant:
-            raise HTTPException(status_code=404, detail=f"Varian {item.variant_id} tidak ditemukan")
-        if int(variant.get("sale_qty", 0)) < item.qty:
-            raise HTTPException(status_code=400, detail=f"Stok jual {variant.get('color','')} {variant.get('size','')} tidak mencukupi")
+        variant_id = item.variant_id
+        variant = variants_by_id.get(variant_id)
+        if variant is None:
+            variant = find_variant(variant_id)
+            if not variant:
+                raise HTTPException(status_code=404, detail=f"Varian {variant_id} tidak ditemukan")
+            variants_by_id[variant_id] = variant
         validate_price(variant, item.unit_price)
+        qty_by_variant[variant_id] = qty_by_variant.get(variant_id, 0) + item.qty
         subtotal += item.qty * item.unit_price
         max_discount += item.qty * max(0, item.unit_price - int(variant.get("minimum_price", 0)))
         prepared.append((item, variant))
+
+    # A cart may contain the same variant more than once when the user
+    # manually entered different selling prices. Validate the combined
+    # quantity so duplicate lines cannot oversell the same stock.
+    for variant_id, total_qty in qty_by_variant.items():
+        variant = variants_by_id[variant_id]
+        if int(variant.get("sale_qty", 0)) < total_qty:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Stok jual {variant.get('color','')} {variant.get('size','')} tidak mencukupi",
+            )
+
     if requested_discount > max_discount:
         raise HTTPException(status_code=400, detail=f"Diskon maksimal adalah {max_discount}")
     return prepared, subtotal, max_discount
