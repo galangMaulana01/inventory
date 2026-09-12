@@ -1,7 +1,7 @@
 from fastapi import FastAPI, HTTPException, UploadFile, Form, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 from typing import Optional, List, Any
 from datetime import datetime, timezone, timedelta
 from pathlib import Path
@@ -13,6 +13,7 @@ import secrets
 import base64
 import hmac
 import uuid
+import re
 
 try:
     from pymongo import MongoClient
@@ -83,6 +84,41 @@ async def auth_middleware(request: Request, call_next):
 # ============================================================
 # MODELS
 # ============================================================
+HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
+
+def normalize_hex_value(value: Optional[str]) -> Optional[str]:
+    if value is None:
+        return None
+    value = str(value).strip()
+    if not HEX_RE.fullmatch(value):
+        raise ValueError("Format warna harus #RRGGBB")
+    return value.lower()
+
+def normalize_color_stops(color_type: str, stops: Optional[List[str]]) -> List[str]:
+    kind = str(color_type or "solid").strip().lower()
+    if kind == "solid":
+        if stops:
+            normalized = [normalize_hex_value(x) for x in stops]
+            if len(normalized) != 1:
+                raise ValueError("Warna solid hanya boleh memiliki satu warna")
+            return normalized
+        return []
+    if kind != "gradient":
+        raise ValueError("Tipe warna harus solid atau gradient")
+    normalized = [normalize_hex_value(x) for x in (stops or [])]
+    if len(normalized) < 2:
+        raise ValueError("Gradient minimal memiliki dua warna")
+    return normalized
+
+def color_identity(color_type: str, color: str, color_hex: Optional[str], color_stops: Optional[List[str]]) -> tuple[str, List[str]]:
+    kind = str(color_type or "solid").strip().lower()
+    if kind == "gradient":
+        stops = normalize_color_stops("gradient", color_stops)
+        # Ordered stops intentionally matter: Blue -> Purple != Purple -> Blue.
+        return "gradient:" + ">".join(stops), stops
+    hex_value = normalize_hex_value(color_hex or "#cccccc") or "#cccccc"
+    return normalize_color(color), [hex_value]
+
 class SizeInput(BaseModel):
     size: str = Field(min_length=1)
     warehouse_qty: int = Field(ge=0)
@@ -91,9 +127,26 @@ class SizeInput(BaseModel):
     minimum_price: int = Field(ge=0)
 
 class ColorInput(BaseModel):
-    color: str = Field(min_length=1)
+    color: str = Field(default="Gradient", min_length=1)
+    color_type: str = "solid"
     color_hex: Optional[str] = "#cccccc"
+    color_stops: List[str] = Field(default_factory=list)
     sizes: List[SizeInput] = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_color(self):
+        kind = str(self.color_type or "solid").strip().lower()
+        if kind not in {"solid", "gradient"}:
+            raise ValueError("Tipe warna harus solid atau gradient")
+        if kind == "solid":
+            hex_value = normalize_hex_value(self.color_hex or "#cccccc") or "#cccccc"
+            self.color_hex = hex_value
+            self.color_stops = [hex_value]
+        else:
+            self.color_stops = normalize_color_stops("gradient", self.color_stops)
+            self.color = self.color.strip() or "Gradient"
+            self.color_hex = self.color_stops[0]
+        return self
 
 class ProductInput(BaseModel):
     name: str = Field(min_length=1)
@@ -102,9 +155,25 @@ class ProductInput(BaseModel):
 
 class VariantInput(BaseModel):
     product_id: str
-    color: str = Field(min_length=1)
+    color: str = Field(default="Gradient", min_length=1)
+    color_type: str = "solid"
     color_hex: Optional[str] = None
+    color_stops: List[str] = Field(default_factory=list)
     size: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def validate_color(self):
+        kind = str(self.color_type or "solid").strip().lower()
+        if kind == "solid":
+            self.color_hex = normalize_hex_value(self.color_hex or "#cccccc") or "#cccccc"
+            self.color_stops = [self.color_hex]
+        else:
+            self.color_stops = normalize_color_stops("gradient", self.color_stops)
+            self.color = self.color.strip() or "Gradient"
+            self.color_hex = self.color_stops[0]
+        if kind not in {"solid", "gradient"}:
+            raise ValueError("Tipe warna harus solid atau gradient")
+        return self
     warehouse_qty: int = Field(ge=0)
     hpp: int = Field(ge=0)
     normal_price: int = Field(ge=0)
@@ -113,7 +182,9 @@ class VariantInput(BaseModel):
 class VariantUpdate(BaseModel):
     product_id: Optional[str] = None
     color: Optional[str] = None
+    color_type: Optional[str] = None
     color_hex: Optional[str] = None
+    color_stops: Optional[List[str]] = None
     size: Optional[str] = None
     warehouse_qty: Optional[int] = Field(default=None, ge=0)
     hpp: Optional[int] = Field(default=None, ge=0)
@@ -244,7 +315,10 @@ def enrich_variants(variants):
         item["model"] = v.get("model") or p.get("model", "")
         item["image_url"] = v.get("image_url") or p.get("image_url")
         item["color"] = v.get("color") or c.get("color", "")
+        item["color_type"] = v.get("color_type") or c.get("color_type") or "solid"
         item["color_hex"] = v.get("color_hex") or c.get("color_hex") or "#cccccc"
+        stops = v.get("color_stops") or c.get("color_stops") or [item["color_hex"]]
+        item["color_stops"] = stops if isinstance(stops, list) else [item["color_hex"]]
         item["size"] = str(v.get("size", ""))
         item["warehouse_qty"] = int(v.get("warehouse_qty", 0) or 0)
         item["sale_qty"] = int(v.get("sale_qty", 0) or 0)
@@ -445,12 +519,14 @@ async def list_products():
 @app.post("/api/products")
 async def create_product(product: ProductInput):
     for color in product.colors:
+        color_key, color_stops = color_identity(color.color_type, color.color, color.color_hex, color.color_stops)
         if any(s.minimum_price > s.normal_price for s in color.sizes):
             raise HTTPException(status_code=400, detail=f"Harga minimum warna {color.color} melebihi harga normal")
         if len({normalize_color(s.size) for s in color.sizes}) != len(color.sizes):
             raise HTTPException(status_code=400, detail=f"Duplikat size pada warna {color.color}")
-    if len({normalize_color(c.color) for c in product.colors}) != len(product.colors):
-        raise HTTPException(status_code=400, detail="Duplikat warna dalam produk")
+    identities = [color_identity(c.color_type, c.color, c.color_hex, c.color_stops)[0] for c in product.colors]
+    if len(set(identities)) != len(identities):
+        raise HTTPException(status_code=400, detail="Duplikat warna/gradient dalam produk")
 
     created = now_utc()
 
@@ -470,8 +546,10 @@ async def create_product(product: ProductInput):
                     "_id": ObjectId(),
                     "product_id": product_doc["_id"],
                     "color": color.color.strip(),
-                    "color_lower": normalize_color(color.color),
+                    "color_type": color.color_type,
+                    "color_lower": color_key,
                     "color_hex": color.color_hex or "#cccccc",
+                    "color_stops": color_stops,
                     "created_at": created,
                     "deleted": False,
                 }
@@ -482,8 +560,10 @@ async def create_product(product: ProductInput):
                         "product_id": product_doc["_id"],
                         "color_id": color_doc["_id"],
                         "color": color.color.strip(),
-                        "color_lower": normalize_color(color.color),
+                        "color_type": color.color_type,
+                        "color_lower": color_key,
                         "color_hex": color.color_hex or "#cccccc",
+                        "color_stops": color_stops,
                         "size": size.size.strip(),
                         "warehouse_qty": size.warehouse_qty,
                         "sale_qty": 0,
@@ -508,10 +588,11 @@ async def create_product(product: ProductInput):
     products["items"].append(pdoc)
     for color in product.colors:
         color_id = secrets.token_hex(12)
-        cdoc = {"id": color_id, "product_id": product_id, "color": color.color.strip(), "color_lower": normalize_color(color.color), "color_hex": color.color_hex or "#cccccc", "created_at": created.isoformat(), "deleted": False}
+        color_key, color_stops = color_identity(color.color_type, color.color, color.color_hex, color.color_stops)
+        cdoc = {"id": color_id, "product_id": product_id, "color": color.color.strip(), "color_type": color.color_type, "color_lower": color_key, "color_hex": color.color_hex or "#cccccc", "color_stops": color_stops, "created_at": created.isoformat(), "deleted": False}
         colors["items"].append(cdoc)
         for size in color.sizes:
-            variants["items"].append({"id": secrets.token_hex(12), "product_id": product_id, "color_id": color_id, "color": color.color.strip(), "color_lower": normalize_color(color.color), "color_hex": color.color_hex or "#cccccc", "size": size.size.strip(), "warehouse_qty": size.warehouse_qty, "sale_qty": 0, "hpp": size.hpp, "normal_price": size.normal_price, "minimum_price": size.minimum_price, "created_at": created.isoformat(), "deleted": False})
+            variants["items"].append({"id": secrets.token_hex(12), "product_id": product_id, "color_id": color_id, "color": color.color.strip(), "color_type": color.color_type, "color_lower": color_key, "color_hex": color.color_hex or "#cccccc", "color_stops": color_stops, "size": size.size.strip(), "warehouse_qty": size.warehouse_qty, "sale_qty": 0, "hpp": size.hpp, "normal_price": size.normal_price, "minimum_price": size.minimum_price, "created_at": created.isoformat(), "deleted": False})
     save_json("products", products)
     save_json("colors", colors)
     save_json("variants", variants)
@@ -649,7 +730,7 @@ async def create_variant(variant: VariantInput):
     if not product:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
 
-    color_norm = normalize_color(variant.color)
+    color_norm, color_stops = color_identity(variant.color_type, variant.color, variant.color_hex, variant.color_stops)
     size = variant.size.strip()
 
     if USE_MONGO:
@@ -698,8 +779,10 @@ async def create_variant(variant: VariantInput):
             "product_id": product_oid,
             "color_id": color["_id"],
             "color": color["color"],
+            "color_type": color.get("color_type") or variant.color_type,
             "color_lower": color_norm,
-            "color_hex": color.get("color_hex") or "#cccccc",
+            "color_hex": color.get("color_hex") or variant.color_hex or "#cccccc",
+            "color_stops": color.get("color_stops") or color_stops,
             "size": size,
             "warehouse_qty": variant.warehouse_qty,
             "sale_qty": 0,
@@ -716,15 +799,15 @@ async def create_variant(variant: VariantInput):
         return {"id": str(doc["_id"]), "message": "Varian berhasil ditambahkan"}
     data = load_json("variants", {"items": []})
     for v in data["items"]:
-        if str(v.get("product_id")) == variant.product_id and normalize_color(v.get("color")) == color_norm and str(v.get("size")).strip().lower() == size.lower() and not v.get("deleted"):
+        if str(v.get("product_id")) == variant.product_id and str(v.get("color_lower")) == color_norm and str(v.get("size")).strip().lower() == size.lower() and not v.get("deleted"):
             raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
     color_data = load_json("colors", {"items": []})
-    color = next((c for c in color_data["items"] if str(c.get("product_id")) == variant.product_id and normalize_color(c.get("color")) == color_norm and not c.get("deleted")), None)
+    color = next((c for c in color_data["items"] if str(c.get("product_id")) == variant.product_id and str(c.get("color_lower")) == color_norm and not c.get("deleted")), None)
     if not color:
-        color = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color": variant.color.strip(), "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "created_at": now_utc().isoformat(), "deleted": False}
+        color = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color": variant.color.strip(), "color_type": variant.color_type, "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "color_stops": color_stops, "created_at": now_utc().isoformat(), "deleted": False}
         color_data["items"].append(color)
         save_json("colors", color_data)
-    doc = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color_id": color["id"], "color": color["color"], "color_lower": color_norm, "color_hex": color["color_hex"], "size": size, "warehouse_qty": variant.warehouse_qty, "sale_qty": 0, "hpp": variant.hpp, "normal_price": variant.normal_price, "minimum_price": variant.minimum_price, "created_at": now_utc().isoformat(), "deleted": False}
+    doc = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color_id": color["id"], "color": color["color"], "color_type": color.get("color_type") or variant.color_type, "color_lower": color_norm, "color_hex": color.get("color_hex") or variant.color_hex or "#cccccc", "color_stops": color.get("color_stops") or color_stops, "size": size, "warehouse_qty": variant.warehouse_qty, "sale_qty": 0, "hpp": variant.hpp, "normal_price": variant.normal_price, "minimum_price": variant.minimum_price, "created_at": now_utc().isoformat(), "deleted": False}
     data["items"].append(doc)
     save_json("variants", data)
     return {"id": doc["id"], "message": "Varian berhasil ditambahkan"}
@@ -742,9 +825,22 @@ async def update_variant(variant_id: str, variant: VariantUpdate):
         update["product_id"] = oid(variant.product_id) if USE_MONGO else variant.product_id
     if variant.color is not None:
         update["color"] = variant.color.strip()
-        update["color_lower"] = normalize_color(variant.color)
+    if variant.color_type is not None:
+        update["color_type"] = variant.color_type.strip().lower()
     if variant.color_hex is not None:
-        update["color_hex"] = variant.color_hex
+        update["color_hex"] = normalize_hex_value(variant.color_hex)
+    if variant.color_stops is not None:
+        update["color_stops"] = normalize_color_stops(update.get("color_type", existing.get("color_type", "solid")), variant.color_stops)
+    if variant.color is not None or variant.color_type is not None or variant.color_hex is not None or variant.color_stops is not None:
+        final_type = update.get("color_type", existing.get("color_type", "solid"))
+        final_color = update.get("color", existing.get("color", ""))
+        final_hex = update.get("color_hex", existing.get("color_hex", "#cccccc"))
+        final_stops = update.get("color_stops", existing.get("color_stops"))
+        color_key, normalized_stops = color_identity(final_type, final_color, final_hex, final_stops)
+        update["color_type"] = final_type
+        update["color_lower"] = color_key
+        update["color_hex"] = normalized_stops[0]
+        update["color_stops"] = normalized_stops
     if variant.size is not None:
         update["size"] = variant.size.strip()
     for field in ("warehouse_qty", "hpp", "normal_price", "minimum_price"):
@@ -759,7 +855,7 @@ async def update_variant(variant_id: str, variant: VariantUpdate):
 
     if USE_MONGO:
         target_product_id = update.get("product_id", existing.get("product_id"))
-        target_color = normalize_color(str(update.get("color", existing.get("color", ""))))
+        target_color = str(update.get("color_lower", existing.get("color_lower", normalize_color(str(update.get("color", existing.get("color", "")))))))
         target_size = normalize_color(str(update.get("size", existing.get("size", ""))))
         duplicate_candidates = db.variants.find({
             "product_id": target_product_id,
@@ -769,20 +865,32 @@ async def update_variant(variant_id: str, variant: VariantUpdate):
         for candidate in duplicate_candidates:
             if str(candidate.get("_id")) != str(existing.get("_id")) and normalize_color(candidate.get("size")) == target_size:
                 raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
-        if "product_id" in update:
-            # Existing color must be recreated/looked up if product changes.
-            color_name = str(update.get("color", existing.get("color", "")))
-            color_norm = normalize_color(color_name)
-            color = db.colors.find_one({"product_id": update["product_id"], "color_lower": color_norm, "deleted": {"$ne": True}})
+
+        color_changed = any(k in update for k in ("color", "color_type", "color_lower", "color_hex", "color_stops", "product_id"))
+        if color_changed:
+            color_name = str(update.get("color", existing.get("color", ""))).strip() or "Gradient"
+            color_type = str(update.get("color_type", existing.get("color_type", "solid"))).strip().lower()
+            color_hex = update.get("color_hex", existing.get("color_hex", "#cccccc"))
+            color_stops = update.get("color_stops", existing.get("color_stops"))
+            color_key, normalized_stops = color_identity(color_type, color_name, color_hex, color_stops)
+            color_query = {"product_id": target_product_id, "color_lower": color_key, "deleted": {"$ne": True}}
+            color = db.colors.find_one(color_query)
             if not color:
-                color = {"_id": ObjectId(), "product_id": update["product_id"], "color": color_name, "color_lower": color_norm, "color_hex": update.get("color_hex", existing.get("color_hex", "#cccccc")), "created_at": now_utc(), "deleted": False}
-                db.colors.insert_one(color)
+                color = {"_id": ObjectId(), "product_id": target_product_id, "color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops, "created_at": now_utc(), "deleted": False}
+                try:
+                    db.colors.insert_one(color)
+                except DuplicateKeyError:
+                    color = db.colors.find_one(color_query)
+                    if not color:
+                        raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
+            else:
+                db.colors.update_one({"_id": color["_id"]}, {"$set": {"deleted": False, "color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops}})
             update["color_id"] = color["_id"]
-        elif "color" in update:
-            color_norm = normalize_color(update["color"])
-            color = db.colors.find_one({"product_id": existing["product_id"], "color_lower": color_norm, "deleted": {"$ne": True}})
-            if color:
-                update["color_id"] = color["_id"]
+            update["color"] = color_name
+            update["color_type"] = color_type
+            update["color_lower"] = color_key
+            update["color_hex"] = normalized_stops[0]
+            update["color_stops"] = normalized_stops
         try:
             db.variants.update_one({"_id": oid(variant_id)}, {"$set": update})
         except DuplicateKeyError:
@@ -792,6 +900,28 @@ async def update_variant(variant_id: str, variant: VariantUpdate):
         found = next((v for v in data["items"] if str(v.get("id")) == variant_id and not v.get("deleted")), None)
         if not found:
             raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
+        target_product = str(update.get("product_id", found.get("product_id")))
+        target_color = str(update.get("color_lower", found.get("color_lower", normalize_color(str(update.get("color", found.get("color", "")))))))
+        target_size = normalize_color(str(update.get("size", found.get("size", ""))))
+        for candidate in data["items"]:
+            if str(candidate.get("id")) == variant_id or candidate.get("deleted") or str(candidate.get("product_id")) != target_product:
+                continue
+            if str(candidate.get("color_lower")) == target_color and normalize_color(candidate.get("size")) == target_size:
+                raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
+        if any(k in update for k in ("color", "color_type", "color_lower", "color_hex", "color_stops", "product_id")):
+            color_name = str(update.get("color", found.get("color", ""))).strip() or "Gradient"
+            color_type = str(update.get("color_type", found.get("color_type", "solid"))).strip().lower()
+            color_key, normalized_stops = color_identity(color_type, color_name, update.get("color_hex", found.get("color_hex", "#cccccc")), update.get("color_stops", found.get("color_stops")))
+            update.update({"color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops})
+            color_data = load_json("colors", {"items": []})
+            color = next((c for c in color_data["items"] if str(c.get("product_id")) == target_product and str(c.get("color_lower")) == color_key and not c.get("deleted")), None)
+            if not color:
+                color = {"id": secrets.token_hex(12), "product_id": target_product, "color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops, "created_at": now_utc().isoformat(), "deleted": False}
+                color_data["items"].append(color)
+            else:
+                color.update({"color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops})
+            update["color_id"] = color["id"]
+            save_json("colors", color_data)
         found.update(update)
         save_json("variants", data)
     return {"message": "Varian diperbarui"}
