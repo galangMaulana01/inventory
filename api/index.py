@@ -542,6 +542,7 @@ async def create_product(product: ProductInput):
         db.products.insert_one(product_doc)
         try:
             for color in product.colors:
+                color_key, color_stops = color_identity(color.color_type, color.color, color.color_hex, color.color_stops)
                 color_doc = {
                     "_id": ObjectId(),
                     "product_id": product_doc["_id"],
