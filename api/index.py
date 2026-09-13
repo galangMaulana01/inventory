@@ -366,6 +366,21 @@ def add_stock_move(variant_id, from_type, to_type, qty, notes=""):
         data["items"].append(json_safe(doc))
         save_json("stock_moves", data)
 
+def add_activity_log(action: str, description: str, meta: dict = None):
+    """Generic activity log for product/variant/stock changes, shown on the History page."""
+    doc = {
+        "action": action,
+        "description": description,
+        "meta": meta or {},
+        "created_at": now_utc(),
+    }
+    if USE_MONGO:
+        db.activity_log.insert_one(doc)
+    else:
+        data = load_json("activity_log", {"items": []})
+        data["items"].append(json_safe(doc))
+        save_json("activity_log", data)
+
 # ============================================================
 # AUTH HELPERS
 # ============================================================
@@ -417,6 +432,7 @@ if USE_MONGO:
             name="color_product_lower_unique_active"
         )
         db.stock_moves.create_index([("created_at", -1)], name="stock_moves_created_at")
+        db.activity_log.create_index([("created_at", -1)], name="activity_log_created_at")
     except Exception as exc:
         print(f"Index warning: {exc}")
 
@@ -579,6 +595,8 @@ async def create_product(product: ProductInput):
             db.colors.delete_many({"product_id": product_doc["_id"]})
             db.variants.delete_many({"product_id": product_doc["_id"]})
             raise HTTPException(status_code=400, detail="Kombinasi warna + size duplikat")
+        total_sizes = sum(len(c.sizes) for c in product.colors)
+        add_activity_log("product_created", f"Produk \"{product.name.strip()} {product.model.strip()}\" ditambahkan ({len(product.colors)} warna, {total_sizes} size)", {"product_id": str(product_doc["_id"]), "name": product.name.strip(), "model": product.model.strip()})
         return {"id": str(product_doc["_id"]), "message": "Produk berhasil dibuat"}
 
     products = load_json("products", {"items": []})
@@ -597,6 +615,8 @@ async def create_product(product: ProductInput):
     save_json("products", products)
     save_json("colors", colors)
     save_json("variants", variants)
+    total_sizes = sum(len(c.sizes) for c in product.colors)
+    add_activity_log("product_created", f"Produk \"{product.name.strip()} {product.model.strip()}\" ditambahkan ({len(product.colors)} warna, {total_sizes} size)", {"product_id": product_id, "name": product.name.strip(), "model": product.model.strip()})
     return {"id": product_id, "message": "Produk berhasil dibuat"}
 
 @app.get("/api/products/{product_id}")
@@ -630,10 +650,13 @@ async def update_product(product_id: str, name: str = Form(...), model: str = Fo
             raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
         found.update({"name": name.strip(), "model": model.strip()})
         save_json("products", data)
+    add_activity_log("product_updated", f"Produk \"{name.strip()} {model.strip()}\" diperbarui", {"product_id": product_id, "name": name.strip(), "model": model.strip()})
     return {"message": "Produk diperbarui"}
 
 @app.delete("/api/products/{product_id}")
 async def delete_product(product_id: str):
+    product = find_product(product_id)
+    product_label = f"{product.get('name','')} {product.get('model','')}".strip() if product else product_id
     if USE_MONGO:
         result = db.products.update_one({"_id": oid(product_id)}, {"$set": {"deleted": True}})
         if result.matched_count == 0:
@@ -653,6 +676,7 @@ async def delete_product(product_id: str):
                     item["deleted"] = True
             save_json(name, data)
         save_json("products", products)
+    add_activity_log("product_deleted", f"Produk \"{product_label}\" dihapus", {"product_id": product_id})
     return {"message": "Produk dihapus"}
 
 # ============================================================
@@ -689,8 +713,10 @@ async def upload_product_image(product_id: str, image: UploadFile):
     if len(content) > 5 * 1024 * 1024:
         raise HTTPException(status_code=400, detail="Ukuran maksimal 5MB")
 
-    if not find_product(product_id):
+    product = find_product(product_id)
+    if not product:
         raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+    is_replacing_existing = bool(product.get("image_url"))
 
     url = await upload_image_to_cloudinary(content, image.filename or "product.jpg")
     if USE_MONGO:
@@ -701,6 +727,9 @@ async def upload_product_image(product_id: str, image: UploadFile):
         if found:
             found["image_url"] = url
             save_json("products", data)
+    if is_replacing_existing:
+        label = f"{product.get('name','')} {product.get('model','')}".strip()
+        add_activity_log("image_updated", f"Gambar produk \"{label}\" diperbarui", {"product_id": product_id})
     return {"image_url": url, "message": "Gambar utama produk berhasil disimpan"}
 
 def find_product(product_id: str):
@@ -800,6 +829,8 @@ async def create_variant(variant: VariantInput):
             db.variants.insert_one(doc)
         except DuplicateKeyError:
             raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
+        label = f"{product.get('name','')} {product.get('model','')}".strip()
+        add_activity_log("variant_created", f"Warna/size baru \"{variant.color.strip()} · {size}\" ditambahkan ke \"{label}\" ({variant.warehouse_qty} unit)", {"product_id": str(variant.product_id), "variant_id": str(doc["_id"]), "color": variant.color.strip(), "size": size})
         return {"id": str(doc["_id"]), "message": "Varian berhasil ditambahkan"}
     data = load_json("variants", {"items": []})
     for v in data["items"]:
@@ -814,6 +845,8 @@ async def create_variant(variant: VariantInput):
     doc = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color_id": color["id"], "color": color["color"], "color_type": color.get("color_type") or variant.color_type, "color_lower": color_norm, "color_hex": color.get("color_hex") or variant.color_hex or "#cccccc", "color_stops": color.get("color_stops") or color_stops, "size": size, "warehouse_qty": variant.warehouse_qty, "sale_qty": 0, "hpp": variant.hpp, "normal_price": variant.normal_price, "minimum_price": variant.minimum_price, "created_at": now_utc().isoformat(), "deleted": False}
     data["items"].append(doc)
     save_json("variants", data)
+    label = f"{product.get('name','')} {product.get('model','')}".strip()
+    add_activity_log("variant_created", f"Warna/size baru \"{variant.color.strip()} · {size}\" ditambahkan ke \"{label}\" ({variant.warehouse_qty} unit)", {"product_id": str(variant.product_id), "variant_id": doc["id"], "color": variant.color.strip(), "size": size})
     return {"id": doc["id"], "message": "Varian berhasil ditambahkan"}
 
 @app.put("/api/variants/{variant_id}")
@@ -928,6 +961,11 @@ async def update_variant(variant_id: str, variant: VariantUpdate):
             save_json("colors", color_data)
         found.update(update)
         save_json("variants", data)
+    variant_product = find_product(update.get("product_id", existing.get("product_id")))
+    product_label = f"{variant_product.get('name','')} {variant_product.get('model','')}".strip() if variant_product else ""
+    final_color = update.get("color", existing.get("color", ""))
+    final_size = update.get("size", existing.get("size", ""))
+    add_activity_log("variant_updated", f"Warna/size \"{final_color} · {final_size}\" pada \"{product_label}\" diperbarui", {"variant_id": variant_id})
     return {"message": "Varian diperbarui"}
 
 @app.delete("/api/variants/{variant_id}")
@@ -942,6 +980,9 @@ async def delete_variant(variant_id: str):
         found = next(v for v in data["items"] if str(v.get("id")) == variant_id)
         found["deleted"] = True
         save_json("variants", data)
+    variant_product = find_product(existing.get("product_id"))
+    product_label = f"{variant_product.get('name','')} {variant_product.get('model','')}".strip() if variant_product else ""
+    add_activity_log("variant_deleted", f"Warna/size \"{existing.get('color','')} · {existing.get('size','')}\" pada \"{product_label}\" dihapus", {"variant_id": variant_id})
     return {"message": "Varian dihapus"}
 
 # ============================================================
@@ -970,6 +1011,9 @@ async def transfer_stock(transfer: TransferInput):
         save_json("variants", data)
 
     add_stock_move(transfer.variant_id, "warehouse", "sale", transfer.qty, "Transfer manual")
+    product = find_product(variant.get("product_id"))
+    product_label = f"{product.get('name','')} {product.get('model','')}".strip() if product else ""
+    add_activity_log("stock_transfer", f"Transfer stok \"{product_label}\" ({variant.get('color','')} · {variant.get('size','')}): {transfer.qty} unit dari gudang ke pasar", {"variant_id": str(transfer.variant_id), "qty": transfer.qty})
     return {"message": f"Stok berhasil dipindahkan ({transfer.qty} unit)"}
 
 # ============================================================
@@ -1114,6 +1158,22 @@ async def list_transactions(limit: int = Query(100, ge=1, le=5000)):
         item["image_url"] = t.get("image_url") or p.get("image_url")
         item["total"] = int(t.get("total", t.get("total_price", 0)) or 0)
         output.append(item)
+    return json_safe(output)
+
+@app.get("/api/activity-log")
+async def list_activity_log(limit: int = Query(300, ge=1, le=1000)):
+    if USE_MONGO:
+        docs = list(db.activity_log.find().sort("created_at", -1).limit(limit))
+    else:
+        data = load_json("activity_log", {"items": []})
+        docs = sorted(data["items"], key=lambda d: d.get("created_at", ""), reverse=True)[:limit]
+    output = [{
+        "id": str(d.get("_id", d.get("id", ""))),
+        "action": d.get("action", ""),
+        "description": d.get("description", ""),
+        "meta": d.get("meta", {}),
+        "created_at": d.get("created_at"),
+    } for d in docs]
     return json_safe(output)
 
 # ============================================================
