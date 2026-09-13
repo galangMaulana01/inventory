@@ -667,13 +667,16 @@ async def upload_image_to_cloudinary(content: bytes, filename: str) -> str:
 
     import requests
     import hashlib as _hashlib
+    from starlette.concurrency import run_in_threadpool
     timestamp = int(time.time())
     signature_base = f"timestamp={timestamp}{CLOUDINARY_API_SECRET}"
     signature = _hashlib.sha1(signature_base.encode("utf-8")).hexdigest()
     url = f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload"
     files = {"file": (filename, content)}
     data = {"api_key": CLOUDINARY_API_KEY, "timestamp": timestamp, "signature": signature}
-    response = requests.post(url, files=files, data=data, timeout=30)
+    # requests.post is blocking (sync) I/O — run it in a thread pool so it doesn't
+    # freeze the whole async event loop while waiting on Cloudinary's network round-trip.
+    response = await run_in_threadpool(requests.post, url, files=files, data=data, timeout=30)
     if response.status_code != 200:
         raise HTTPException(status_code=502, detail="Upload gambar ke Cloudinary gagal")
     return response.json()["secure_url"]
