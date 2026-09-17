@@ -1,1221 +1,2090 @@
-from fastapi import FastAPI, HTTPException, UploadFile, Form, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
-from fastapi.middleware.cors import CORSMiddleware
-from pydantic import BaseModel, Field, model_validator
-from typing import Optional, List, Any
-from datetime import datetime, timezone, timedelta
-from pathlib import Path
 import os
-import json
-import hashlib
-import time
-import secrets
-import base64
-import hmac
-import uuid
+import asyncio
+import random
 import re
+import uuid
+import hashlib
+import json
+import traceback
+from datetime import datetime, timezone, date, time, timedelta
+from decimal import Decimal, InvalidOperation
+from pathlib import Path
+from auth import get_admin_user
+import httpx
+import requests
+import uvicorn
+from authlib.integrations.starlette_client import OAuth
+from dotenv import load_dotenv
+from fastapi import FastAPI, Request, Response, Depends, HTTPException, BackgroundTasks, Query, UploadFile, File
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import RedirectResponse, FileResponse, JSONResponse
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+from sqlalchemy import or_, func
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import Session, joinedload
+from starlette.config import Config
+from starlette.middleware.sessions import SessionMiddleware
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
+from auth import (
+    hash_password,
+    verify_password,
+    create_access_token,
+    get_current_user
+)
+from bottele import send_telegram_message, handle_telegram_update_webhook
+from database import engine, SessionLocal
+import models
+from models import Base, User, Bet, Deposit, Withdraw, WithdrawStatus, ChatMessage
+models.Base.metadata.create_all(bind=engine)
+from passlib.context import CryptContext
+from typing import Optional
+import shutil
 
-try:
-    from pymongo import MongoClient
-    from pymongo.errors import DuplicateKeyError
-    from bson import ObjectId
-except Exception:
-    MongoClient = None
-    DuplicateKeyError = Exception
-    ObjectId = None
+# ================= INIT =================
 
-# ============================================================
-# CONFIG
-# ============================================================
-MONGO_URI = os.getenv("MONGODB_URI")
-CLOUDINARY_CLOUD_NAME = os.getenv("CLOUDINARY_CLOUD_NAME")
-CLOUDINARY_API_KEY = os.getenv("CLOUDINARY_API_KEY")
-CLOUDINARY_API_SECRET = os.getenv("CLOUDINARY_API_SECRET")
-USE_CLOUDINARY = all([CLOUDINARY_CLOUD_NAME, CLOUDINARY_API_KEY, CLOUDINARY_API_SECRET])
+load_dotenv()
 
-# Login v1 — kredensial statis di server (env var kalau ada, fallback default).
-# Belum menyentuh database sama sekali; ganti nanti kalau sudah ada sistem user.
-ADMIN_USERNAME = os.getenv("ADMIN_USERNAME", "admin")
-ADMIN_PASSWORD = os.getenv("ADMIN_PASSWORD", "stokku123")
-AUTH_SECRET = os.getenv("AUTH_SECRET") or hashlib.sha256(ADMIN_PASSWORD.encode("utf-8")).hexdigest()
-AUTH_TTL_SECONDS = int(os.getenv("AUTH_TTL_SECONDS", str(60 * 60 * 12)))
+app = FastAPI()
 
-DATA_DIR = Path(os.getenv("STOKKU_DATA_DIR", "/tmp/stokku_data"))
-UPLOAD_DIR = Path(os.getenv("STOKKU_UPLOAD_DIR", "/tmp/stokku_uploads"))
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    origin = request.headers.get("origin")
+    method = request.method
+    url = request.url.path
+    print(f"DEBUG: Request Masuk -> {method} {url} | Origin: {origin}")
+    
+    response = await call_next(request)
+    
+    print(f"DEBUG: Response Status -> {response.status_code}")
+    return response
 
-mongo_client = None
-db = None
-USE_MONGO = False
 
-if MONGO_URI and MongoClient:
-    try:
-        mongo_client = MongoClient(MONGO_URI, serverSelectionTimeoutMS=5000)
-        db = mongo_client.get_default_database()
-        mongo_client.admin.command("ping")
-        USE_MONGO = True
-    except Exception as exc:
-        print(f"MongoDB unavailable: {exc}")
-        USE_MONGO = False
-        db = None
+pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
-if not USE_MONGO:
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    UPLOAD_DIR.mkdir(parents=True, exist_ok=True)
+from uvicorn.middleware.proxy_headers import ProxyHeadersMiddleware
 
-app = FastAPI(title="Stokku Inventory API", version="2.0.0")
+# 1. Pastikan domain baru ada di sini
+origins = [
+    "https://bola433.my.id",
+    "https://www.bola433.my.id",
+    "http://localhost:8000",
+]
+
+# 2. Tambahkan ProxyHeaders (Paling atas agar skema HTTPS kedeteksi)
+app.add_middleware(ProxyHeadersMiddleware, trusted_hosts="*")
+
+# 3. CORS Middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=False,
+    allow_origins=origins,
+    allow_credentials=True, # WAJIB True untuk cookies
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# 4. Session Middleware
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=os.getenv("SESSION_SECRET", "pastiin-ini-rahasia-banget"),
+    https_only=True, # Set True karena lo pakai HTTPS
+    same_site="lax"  # Pakai 'lax' untuk domain yang sama agar lebih stabil
+)
+
+
 @app.middleware("http")
-async def auth_middleware(request: Request, call_next):
-    path = request.url.path
-    if request.method != "OPTIONS" and path.startswith("/api/") and path not in {"/api/login", "/api/logout", "/api/health"}:
-        try:
-            require_auth(request)
-        except HTTPException as exc:
-            return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+async def fix_proto_https(request: Request, call_next):
+    x_forwarded_proto = request.headers.get("x-forwarded-proto")
+    if x_forwarded_proto == "https":
+        request.scope["scheme"] = "https"
     return await call_next(request)
+    
 
-# ============================================================
-# MODELS
-# ============================================================
-HEX_RE = re.compile(r"^#[0-9a-fA-F]{6}$")
 
-def normalize_hex_value(value: Optional[str]) -> Optional[str]:
-    if value is None:
-        return None
-    value = str(value).strip()
-    if not HEX_RE.fullmatch(value):
-        raise ValueError("Format warna harus #RRGGBB")
-    return value.lower()
 
-def normalize_color_stops(color_type: str, stops: Optional[List[str]]) -> List[str]:
-    kind = str(color_type or "solid").strip().lower()
-    if kind == "solid":
-        if stops:
-            normalized = [normalize_hex_value(x) for x in stops]
-            if len(normalized) != 1:
-                raise ValueError("Warna solid hanya boleh memiliki satu warna")
-            return normalized
-        return []
-    if kind != "gradient":
-        raise ValueError("Tipe warna harus solid atau gradient")
-    normalized = [normalize_hex_value(x) for x in (stops or [])]
-    if len(normalized) < 2:
-        raise ValueError("Gradient minimal memiliki dua warna")
-    return normalized
+# ================= GOOGLE LOGIN =================
 
-def color_identity(color_type: str, color: str, color_hex: Optional[str], color_stops: Optional[List[str]]) -> tuple[str, List[str]]:
-    kind = str(color_type or "solid").strip().lower()
-    if kind == "gradient":
-        stops = normalize_color_stops("gradient", color_stops)
-        # Ordered stops intentionally matter: Blue -> Purple != Purple -> Blue.
-        return "gradient:" + ">".join(stops), stops
-    hex_value = normalize_hex_value(color_hex or "#cccccc") or "#cccccc"
-    return normalize_color(color), [hex_value]
+config = Config(".env")
 
-class SizeInput(BaseModel):
-    size: str = Field(min_length=1)
-    warehouse_qty: int = Field(ge=0)
-    hpp: int = Field(ge=0)
-    normal_price: int = Field(ge=0)
-    minimum_price: int = Field(ge=0)
+oauth = OAuth()
 
-class ColorInput(BaseModel):
-    color: str = Field(default="Gradient", min_length=1)
-    color_type: str = "solid"
-    color_hex: Optional[str] = "#cccccc"
-    color_stops: List[str] = Field(default_factory=list)
-    sizes: List[SizeInput] = Field(min_length=1)
+oauth.register(
+    name="google",
+    client_id=config("GOOGLE_CLIENT_ID"),
+    client_secret=config("GOOGLE_CLIENT_SECRET"),
+    server_metadata_url="https://accounts.google.com/.well-known/openid-configuration",
+    client_kwargs={
+        "scope": "openid email profile"
+    }
+)
 
-    @model_validator(mode="after")
-    def validate_color(self):
-        kind = str(self.color_type or "solid").strip().lower()
-        if kind not in {"solid", "gradient"}:
-            raise ValueError("Tipe warna harus solid atau gradient")
-        if kind == "solid":
-            hex_value = normalize_hex_value(self.color_hex or "#cccccc") or "#cccccc"
-            self.color_hex = hex_value
-            self.color_stops = [hex_value]
+BASE_DIR = Path(__file__).resolve().parent
+
+app.mount(
+    "/static",
+    StaticFiles(directory=str(BASE_DIR / "static")),
+    name="static"
+)
+
+Base.metadata.create_all(bind=engine)
+
+transactions = {}
+
+STARPAGO_URL = "https://id.api.starpago.com/api/v2/payment/order/create"
+APP_ID = "2efd66cb53fb2a0b86fdd1a998cc18d8"
+APP_SECRET = "755f59601a48930216448350b79eee04"
+ODDS_API_KEY = "90d84a3b7c5f22ce46b4d9bdaa0b466c"
+LUNEXA_CONFIG = {
+    "agent_code": "jumpapegas880",
+    "agent_token": "4c7995b7856a5b0377149d48a47fd4b1",
+    "base_url": "https://svc-v1.lunexa.to/api/v2"
+}
+
+# ================= ODDS CACHE =================
+
+ODDS_CACHE = {}
+
+# ================= LIVE STREAM CACHE (WeStream) =================
+WESTREAM_BASE = "https://westream.su"
+WESTREAM_MATCHES_ENDPOINT = "/matches/football"
+
+LIVE_CACHE: list = []
+LIVE_CACHE_LOCK = asyncio.Lock()
+
+LEAGUES = [
+	"soccer_uefa_champs_league",
+	"soccer_uefa_europa_conference_league",
+	"soccer_uefa_europa_league",
+    "soccer_epl",
+    "soccer_spain_la_liga",
+    "soccer_italy_serie_a",
+    "soccer_germany_bundesliga",
+    "soccer_france_ligue_one",
+]
+# ================= DATABASE =================
+
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+    finally:
+        db.close()
+
+PAYMENT_METHODS = {
+    "DANA": {"payMethod": "ID_DANA", "channelCode": "DANA"},
+    "QRIS": {"payMethod": "ID_QRIS", "channelCode": "QRIS"},
+
+    "BRI": {"payMethod": "ID_VA", "channelCode": "BRI"},
+    "MANDIRI": {"payMethod": "ID_VA", "channelCode": "MANDIRI"},
+}
+
+# ================= HELPER =================
+
+def parse_extra(ext: dict):
+    if not ext or not isinstance(ext, dict):
+        return ""
+
+    keys = sorted(ext.keys())
+
+    pairs = []
+    for k in keys:
+        v = str(ext[k]).strip()
+        pairs.append(f"{k}={v}")
+
+    return "&".join(pairs)
+
+
+def generate_sign(params: dict, app_secret: str):
+    keys = [k for k in params.keys() if k != "sign" and params[k] is not None]
+    keys.sort()
+
+    parts = []
+
+    for key in keys:
+        value = params[key]
+
+        if isinstance(value, dict):
+            val_str = parse_extra(value)
         else:
-            self.color_stops = normalize_color_stops("gradient", self.color_stops)
-            self.color = self.color.strip() or "Gradient"
-            self.color_hex = self.color_stops[0]
-        return self
+            val_str = str(value).strip()
 
-class ProductInput(BaseModel):
-    name: str = Field(min_length=1)
-    model: str = Field(min_length=1)
-    colors: List[ColorInput] = Field(min_length=1)
+        parts.append(f"{key}={val_str}")
 
-class VariantInput(BaseModel):
-    product_id: str
-    color: str = Field(default="Gradient", min_length=1)
-    color_type: str = "solid"
-    color_hex: Optional[str] = None
-    color_stops: List[str] = Field(default_factory=list)
-    size: str = Field(min_length=1)
+    sign_str = "&".join(parts)
 
-    @model_validator(mode="after")
-    def validate_color(self):
-        kind = str(self.color_type or "solid").strip().lower()
-        if kind == "solid":
-            self.color_hex = normalize_hex_value(self.color_hex or "#cccccc") or "#cccccc"
-            self.color_stops = [self.color_hex]
+    if app_secret:
+        sign_str += f"&key={app_secret}"
+
+    print("DEBUG SIGN STRING:", sign_str)
+
+    sign = hashlib.sha256(sign_str.encode("utf-8")).hexdigest()
+
+    return sign, sign_str
+# ================= PAGES =================
+
+@app.get("/")  
+def root():  
+    return FileResponse(str(BASE_DIR / "views" / "home.html")) 
+    
+@app.get("/game")  
+def mahjong():  
+    return FileResponse(str(BASE_DIR / "views" / "game.html"))
+    
+@app.get("/login")  
+def login():  
+    return FileResponse(str(BASE_DIR / "views" / "login.html"))
+    
+@app.get("/history")  
+def history_page():  
+    return FileResponse(str(BASE_DIR / "views" / "history.html")) 
+    
+@app.get("/historydepo")  
+def history_page_depo():  
+    return FileResponse(str(BASE_DIR / "views" / "historytransaksi.html"))
+  
+@app.get("/setting")  
+def setting():  
+    return FileResponse(str(BASE_DIR / "views" / "setting.html"))  
+      
+@app.get("/username")  
+def username():  
+    return FileResponse(str(BASE_DIR / "views" / "username.html"))  
+      
+@app.get("/password")  
+def password():  
+    return FileResponse(str(BASE_DIR / "views" / "password.html")) 
+    
+@app.get("/live")
+def live_page():
+    return FileResponse(str(BASE_DIR / "views" / "live.html"))
+      
+@app.get("/sportbook")  
+def sportbook():  
+    return FileResponse(str(BASE_DIR / "views" / "sportbook.html"))  
+    
+@app.get("/contact")  
+def contact():  
+    return FileResponse(str(BASE_DIR / "views" / "contact.html"))  
+      
+@app.get("/account")  
+def account():  
+    return FileResponse(str(BASE_DIR / "views" / "account.html"))
+    
+@app.get("/info")  
+def info():  
+    return FileResponse(str(BASE_DIR / "views" / "info.html"))
+    
+@app.get("/referral")  
+def referal():  
+    return FileResponse(str(BASE_DIR / "views" / "referral.html"))
+      
+@app.get("/deposit")  
+def wallet():  
+    return FileResponse(str(BASE_DIR / "views" / "deposit.html"))
+
+@app.get("/panel/")
+def login_panel_page():
+    file_path = BASE_DIR / "views" / "panel" / "login.html"
+    return FileResponse(str(file_path))
+    
+@app.get("/panel/dashboard")
+def dashboardpanel(
+    admin: User = Depends(get_admin_user)
+):
+    file_path = BASE_DIR / "views" / "panel" / "dashboard.html"
+    return FileResponse(str(file_path))
+    
+@app.get("/panel/user")
+def userpanel(
+    admin: User = Depends(get_admin_user)
+):
+    file_path = BASE_DIR / "views" / "panel" / "user.html"
+    return FileResponse(str(file_path))
+    
+@app.get("/panel/deposit")
+def depositpanel(
+    admin: User = Depends(get_admin_user)
+):
+    file_path = BASE_DIR / "views" / "panel" / "deposit.html"
+    return FileResponse(str(file_path))
+    
+@app.get("/panel/withdraw")
+def withdrawpanel(
+    admin: User = Depends(get_admin_user)
+):
+    file_path = BASE_DIR / "views" / "panel" / "withdraw.html"
+    return FileResponse(str(file_path))
+    
+@app.get("/panel/leaderboard")
+def leaderboardpanel(
+    admin: User = Depends(get_admin_user)
+):
+    file_path = BASE_DIR / "views" / "panel" / "leaderboard.html"
+    return FileResponse(str(file_path))
+    
+@app.get("/panel/bet")
+def leaderboardpanel(
+    admin: User = Depends(get_admin_user)
+):
+    file_path = BASE_DIR / "views" / "panel" / "bet.html"
+    return FileResponse(str(file_path))
+    
+@app.get("/panel/forum")
+def forumpanel(
+    admin: User = Depends(get_admin_user)
+):
+    file_path = BASE_DIR / "views" / "panel" / "forum.html"
+    return FileResponse(str(file_path))
+# ================= HELPER =================
+def is_email(value: str) -> bool:
+    """Check if the value is a valid email"""
+    return re.match(r"[^@]+@[^@]+\.[^@]+", value) is not None
+
+def is_phone(value: str) -> bool:
+    return re.match(r'^\+?\d{6,15}$', value) is not None
+
+# ================= LUNEXA LOGIKA =================
+
+async def create_lunexa_user(username: str):
+    """
+    Mendaftarkan username ke Lunexa API
+    """
+    async with httpx.AsyncClient() as client:
+        payload = {
+            "agent_code": LUNEXA_CONFIG["agent_code"],
+            "agent_token": LUNEXA_CONFIG["agent_token"],
+            "user_code": username,
+            "deposit_amount": 0  # Default 0 saat daftar
+        }
+        try:
+            response = await client.post(f"{LUNEXA_CONFIG['base_url']}/user_create", json=payload)
+            return response.json()
+        except Exception as e:
+            print(f"LUNEXA CREATE USER ERROR for {username}: {e}")
+            return none
+            
+async def lunexa_deposit(username: str, amount: int):
+    """Kirim saldo dari web ke dompet game Lunexa"""
+    async with httpx.AsyncClient() as client:
+        payload = {
+            "agent_code": LUNEXA_CONFIG["agent_code"],
+            "agent_token": LUNEXA_CONFIG["agent_token"],
+            "user_code": username,
+            "amount": amount
+        }
+        try:
+            response = await client.post(f"{LUNEXA_CONFIG['base_url']}/user_deposit", json=payload)
+            return response.json()
+        except Exception as e:
+            print(f"LUNEXA DEPO ERROR: {e}")
+            return none
+
+async def lunexa_withdraw_all(username: str):
+    async with httpx.AsyncClient() as client:
+        
+        payload = {
+            "agent_code": LUNEXA_CONFIG["agent_code"],
+            "agent_token": LUNEXA_CONFIG["agent_token"],
+            "user_code": username
+        }
+        
+        try:
+            url = f"{LUNEXA_CONFIG['base_url']}/user_withdraw"
+            response = await client.post(url, json=payload, timeout=10.0)
+            res_data = response.json()
+            
+            print(f"DEBUG LUNEXA WD: {res_data}") 
+            return res_data
+        except Exception as e:
+            print(f"LUNEXA WD ERROR: {e}")
+            return none
+
+            
+async def process_withdraw_update(wid: int, action: str, db: Session):
+    
+    withdraw = db.query(Withdraw).filter(Withdraw.id == wid).first()
+    if not withdraw:
+        return f"❌ ID {wid} tidak ditemukan"
+
+    user = db.query(User).filter(User.id == withdraw.user_id).with_for_update().first()
+    if not user:
+        return f"❌ User tidak ditemukan"
+
+    if action == "approve":
+        if withdraw.status != WithdrawStatus.pending:
+            return f"⚠️ WD {wid} sudah diproses sebelumnya"
+
+        try:
+            res = await lunexa_withdraw_all(user.username)
+            
+            if res and res.get("status") == 1:
+                game_wd_amount = Decimal(str(res.get("withdraw_amount", 0)))
+                
+                user.balance += game_wd_amount
+                print(f"DEBUG: Berhasil tarik {game_wd_amount} dari Lunexa untuk user {user.username}")
+            else:
+                return f"⚠️ Gagal tarik saldo dari Lunexa. Pastikan user sudah keluar dari game!"
+        
+        except Exception as e:
+            print(f"ERROR LUNEXA SYNC: {e}")
+            return f"❌ Error koneksi ke server game saat sinkronisasi saldo."
+
+        withdraw.status = WithdrawStatus.approved
+        msg = f"✅ WD ID {wid} DISETUJUI. Saldo game sudah ditarik ke Web."
+
+    elif action == "paid":
+        if withdraw.status != WithdrawStatus.approved:
+            return f"⚠️ WD {wid} harus berstatus APPROVED dulu"
+        
+        withdraw.status = WithdrawStatus.paid
+        msg = f"💸 WD ID {wid} SUDAH DIBAYAR"
+
+    elif action == "reject":
+        if withdraw.status not in [WithdrawStatus.pending, WithdrawStatus.approved]:
+            return f"⚠️ WD {wid} tidak bisa ditolak"
+
+        # Kembalikan saldo ke user jika ditolak
+        withdraw.status = WithdrawStatus.rejected
+        user.balance += withdraw.amount
+        msg = f"❌ WD ID {wid} DITOLAK & SALDO DIKEMBALIKAN"
+
+    withdraw.updated_at = datetime.utcnow()
+    db.commit() # Simpan semua perubahan saldo
+
+    return msg
+    
+@app.get("/api/user/sync-balance")
+async def sync_balance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
+
+    try:
+        res = await lunexa_withdraw_all(user.username)
+        
+        if res and res.get("status") == 1:
+            game_amount = Decimal(str(res.get("withdraw_amount", 0)))
+            
+            if game_amount > 0:
+                user.balance += game_amount
+                user.is_playing = False
+                db.commit()
+
+                return {
+                    "status": "success",
+                    "msg": f"Saldo sebesar {game_amount} berhasil ditarik dari game.",
+                    "new_balance": float(user.balance)
+                }
+            else:
+                return {
+                    "status": "success",
+                    "msg": "Saldo di game kosong.",
+                    "new_balance": float(user.balance)
+                }
+        
+        return {"status": "error", "msg": res.get("msg", "Gagal kontak server game.")}
+
+    except Exception as e:
+        db.rollback()
+        print(f"SYNC ERROR: {e}")
+        return {"status": "error", "msg": "Terjadi kesalahan sistem saat sinkronisasi."}
+        
+from pydantic import BaseModel
+
+class GameListRequest(BaseModel):
+    provider_code: str
+
+@app.post("/api/games/list")
+async def get_game_list(data: GameListRequest):
+    print(f"DEBUG: Request list game untuk provider: {data.provider_code}")
+    
+    async with httpx.AsyncClient() as client:
+        payload = {
+            "agent_code": LUNEXA_CONFIG["agent_code"],
+            "agent_token": LUNEXA_CONFIG["agent_token"],
+            "provider_code": data.provider_code,
+            "lang": "en"
+        }
+        try:
+            response = await client.post(
+                "https://svc-v1.lunexa.to/api/v2/game_list", 
+                json=payload
+            )
+            res_json = response.json()
+            print(f"DEBUG: Lunexa Response: {res_json.get('msg')}")
+            return res_json
+        except Exception as e:
+            print(f"ERROR: {str(e)}")
+            raise HTTPException(status_code=500, detail="Gagal kontak API Lunexa")
+            
+import httpx
+from fastapi import Query, Depends
+from fastapi.responses import RedirectResponse
+
+@app.get("/api/game/launch")
+async def launch_game(
+    game_code: str = Query(...),
+    provider_code: str = Query("PRAGMATIC"),
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        cleanup = await lunexa_withdraw_all(current_user.username)
+        if cleanup and cleanup.get("status") == 1:
+            added_back = Decimal(str(cleanup.get("withdraw_amount", 0)))
+            if added_back > 0:
+                user_clean = db.query(User).filter(User.id == current_user.id).with_for_update().first()
+                user_clean.balance += added_back
+                db.commit()
+                print(f"CLEANUP: Balikin {added_back} ke DB sebelum main lagi.")
+    except:
+        pass 
+    
+    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
+    amount_to_send = int(user.balance) # Kita ambil angka bulat saja
+
+    if amount_to_send > 0:
+        depo_res = await lunexa_deposit(user.username, amount_to_send)
+        if depo_res and depo_res.get("status") == 1:
+            user.balance -= Decimal(str(amount_to_send))
+            user.is_playing = True # SET INI JADI TRUE BRO!
+            db.commit()
+            print(f"SEAMLESS: Berhasil kirim {amount_to_send} ke game untuk {user.username}")
         else:
-            self.color_stops = normalize_color_stops("gradient", self.color_stops)
-            self.color = self.color.strip() or "Gradient"
-            self.color_hex = self.color_stops[0]
-        if kind not in {"solid", "gradient"}:
-            raise ValueError("Tipe warna harus solid atau gradient")
-        return self
-    warehouse_qty: int = Field(ge=0)
-    hpp: int = Field(ge=0)
-    normal_price: int = Field(ge=0)
-    minimum_price: int = Field(ge=0)
+            return {"status": 0, "msg": "Gagal sinkron saldo ke server game."}
 
-class VariantUpdate(BaseModel):
-    product_id: Optional[str] = None
-    color: Optional[str] = None
-    color_type: Optional[str] = None
-    color_hex: Optional[str] = None
-    color_stops: Optional[List[str]] = None
-    size: Optional[str] = None
-    warehouse_qty: Optional[int] = Field(default=None, ge=0)
-    hpp: Optional[int] = Field(default=None, ge=0)
-    normal_price: Optional[int] = Field(default=None, ge=0)
-    minimum_price: Optional[int] = Field(default=None, ge=0)
-
-class TransactionInput(BaseModel):
-    variant_id: str
-    qty: int = Field(gt=0)
-    unit_price: int = Field(gt=0)
-    payment_method: Optional[str] = "cash"
-
-class BatchItem(BaseModel):
-    variant_id: str
-    qty: int = Field(gt=0)
-    unit_price: int = Field(gt=0)
-
-class BatchTransactionInput(BaseModel):
-    items: List[BatchItem] = Field(min_length=1)
-    payment_method: Optional[str] = "cash"
-    discount: int = Field(default=0, ge=0)
-
-class TransferInput(BaseModel):
-    variant_id: str
-    qty: int = Field(gt=0)
-
-class LoginInput(BaseModel):
-    username: str = Field(min_length=1)
-    password: str = Field(min_length=1)
-
-class LogoutInput(BaseModel):
-    token: Optional[str] = None
-
-# ============================================================
-# SERIALIZATION / HELPERS
-# ============================================================
-def normalize_color(value: str) -> str:
-    return str(value or "").strip().lower()
-
-def now_utc() -> datetime:
-    return datetime.now(timezone.utc)
-
-def parse_datetime(value: Any) -> Optional[datetime]:
-    if isinstance(value, datetime):
-        return value
-    if not value:
-        return None
-    try:
-        text = str(value).replace("Z", "+00:00")
-        return datetime.fromisoformat(text)
-    except Exception:
-        return None
-
-def json_safe(value: Any) -> Any:
-    """Recursively remove Mongo ObjectId/datetime so FastAPI can serialize safely."""
-    if ObjectId is not None and isinstance(value, ObjectId):
-        return str(value)
-    if isinstance(value, datetime):
-        if value.tzinfo is None:
-            value = value.replace(tzinfo=timezone.utc)
-        return value.isoformat()
-    if isinstance(value, dict):
-        return {str(k): json_safe(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
-        return [json_safe(v) for v in value]
-    return value
-
-def oid(value: str):
-    if ObjectId is None or not ObjectId.is_valid(str(value)):
-        raise HTTPException(status_code=400, detail="ID tidak valid")
-    return ObjectId(str(value))
-
-def load_json(name: str, default):
-    path = DATA_DIR / f"{name}.json"
-    if not path.exists():
-        return default
-    try:
-        with path.open("r", encoding="utf-8") as f:
-            return json.load(f)
-    except Exception:
-        return default
-
-def save_json(name: str, data):
-    DATA_DIR.mkdir(parents=True, exist_ok=True)
-    path = DATA_DIR / f"{name}.json"
-    with path.open("w", encoding="utf-8") as f:
-        json.dump(data, f, indent=2, ensure_ascii=False, default=json_safe)
-
-def get_products():
-    if USE_MONGO:
-        return list(db.products.find({"deleted": {"$ne": True}}))
-    return load_json("products", {"items": []}).get("items", [])
-
-def get_variants():
-    if USE_MONGO:
-        return list(db.variants.find({"deleted": {"$ne": True}}))
-    return load_json("variants", {"items": []}).get("items", [])
-
-def get_colors():
-    if USE_MONGO:
-        return list(db.colors.find({"deleted": {"$ne": True}}))
-    return load_json("colors", {"items": []}).get("items", [])
-
-def get_transactions():
-    if USE_MONGO:
-        return list(db.transactions.find().sort("created_at", -1).limit(5000))
-    items = load_json("transactions", {"items": []}).get("items", [])
-    items.sort(key=lambda t: str(t.get("created_at", "")), reverse=True)
-    return items[:5000]
-
-def product_map():
-    return {str(p.get("_id", p.get("id"))): p for p in get_products()}
-
-def enrich_variants(variants):
-    products = product_map()
-    colors = {str(c.get("_id", c.get("id"))): c for c in get_colors()}
-    result = []
-    for v in variants:
-        item = dict(v)
-        product_id = str(v.get("product_id", ""))
-        color_id = str(v.get("color_id", ""))
-        p = products.get(product_id, {})
-        c = colors.get(color_id, {})
-        item["id"] = str(v.get("_id", v.get("id", "")))
-        item["product_id"] = product_id
-        item["color_id"] = color_id
-        item["product_name"] = v.get("product_name") or p.get("name", "")
-        item["model"] = v.get("model") or p.get("model", "")
-        item["image_url"] = v.get("image_url") or p.get("image_url")
-        item["color"] = v.get("color") or c.get("color", "")
-        item["color_type"] = v.get("color_type") or c.get("color_type") or "solid"
-        item["color_hex"] = v.get("color_hex") or c.get("color_hex") or "#cccccc"
-        stops = v.get("color_stops") or c.get("color_stops") or [item["color_hex"]]
-        item["color_stops"] = stops if isinstance(stops, list) else [item["color_hex"]]
-        item["size"] = str(v.get("size", ""))
-        item["warehouse_qty"] = int(v.get("warehouse_qty", 0) or 0)
-        item["sale_qty"] = int(v.get("sale_qty", 0) or 0)
-        item["hpp"] = int(v.get("hpp", 0) or 0)
-        item["normal_price"] = int(v.get("normal_price", 0) or 0)
-        item["minimum_price"] = int(v.get("minimum_price", 0) or 0)
-        result.append(item)
-    return json_safe(result)
-
-def find_variant(variant_id: str):
-    if USE_MONGO:
-        return db.variants.find_one({"_id": oid(variant_id), "deleted": {"$ne": True}})
-    return next((v for v in get_variants() if str(v.get("_id", v.get("id"))) == str(variant_id)), None)
-
-def invoice_no():
-    return f"INV-{now_utc().strftime('%Y%m%d-%H%M%S')}-{uuid.uuid4().hex[:8].upper()}"
-
-def validate_price(variant, unit_price):
-    minimum = int(variant.get("minimum_price", 0))
-    normal = int(variant.get("normal_price", 0))
-    if minimum > normal:
-        raise HTTPException(status_code=500, detail="Konfigurasi harga varian tidak valid")
-    if not minimum <= unit_price <= normal:
-        raise HTTPException(status_code=400, detail=f"Harga harus antara {minimum} - {normal}")
-
-def validate_payment_method(payment_method: str) -> str:
-    method = str(payment_method or "cash").strip().lower()
-    if method not in {"cash", "bank", "wallet"}:
-        raise HTTPException(status_code=400, detail="Metode pembayaran harus cash, bank, atau wallet")
-    return method
-
-def add_stock_move(variant_id, from_type, to_type, qty, notes=""):
-    doc = {
-        "variant_id": oid(variant_id) if USE_MONGO else str(variant_id),
-        "from_type": from_type,
-        "to_type": to_type,
-        "qty": int(qty),
-        "notes": notes,
-        "created_at": now_utc(),
-    }
-    if USE_MONGO:
-        db.stock_moves.insert_one(doc)
-    else:
-        data = load_json("stock_moves", {"items": []})
-        data["items"].append(json_safe(doc))
-        save_json("stock_moves", data)
-
-def add_activity_log(action: str, description: str, meta: dict = None):
-    """Generic activity log for product/variant/stock changes, shown on the History page."""
-    doc = {
-        "action": action,
-        "description": description,
-        "meta": meta or {},
-        "created_at": now_utc(),
-    }
-    if USE_MONGO:
-        db.activity_log.insert_one(doc)
-    else:
-        data = load_json("activity_log", {"items": []})
-        data["items"].append(json_safe(doc))
-        save_json("activity_log", data)
-
-# ============================================================
-# AUTH HELPERS
-# ============================================================
-def _b64(value: bytes) -> str:
-    return base64.urlsafe_b64encode(value).rstrip(b"=").decode("ascii")
-
-def _make_token(username: str) -> str:
-    payload = {"u": username, "exp": int(time.time()) + AUTH_TTL_SECONDS}
-    raw = _b64(json.dumps(payload, separators=(",", ":")).encode("utf-8"))
-    sig = _b64(hmac.new(AUTH_SECRET.encode("utf-8"), raw.encode("ascii"), hashlib.sha256).digest())
-    return f"{raw}.{sig}"
-
-def _verify_token(token: str) -> bool:
-    try:
-        raw, sig = token.split(".", 1)
-        expected = _b64(hmac.new(AUTH_SECRET.encode("utf-8"), raw.encode("ascii"), hashlib.sha256).digest())
-        if not hmac.compare_digest(sig, expected):
-            return False
-        padding = "=" * (-len(raw) % 4)
-        payload = json.loads(base64.urlsafe_b64decode((raw + padding).encode("ascii")))
-        return payload.get("u") == ADMIN_USERNAME and int(payload.get("exp", 0)) > int(time.time())
-    except Exception:
-        return False
-
-def require_auth(request: Request):
-    header = request.headers.get("authorization", "")
-    scheme, _, token = header.partition(" ")
-    if scheme.lower() != "bearer" or not _verify_token(token):
-        raise HTTPException(status_code=401, detail="Sesi login tidak valid atau sudah berakhir")
-
-# ============================================================
-# DB INDEXES
-# ============================================================
-if USE_MONGO:
-    try:
-        # create_index is idempotent when the name/spec match what's already
-        # there, so no need to drop existing indexes on every cold start.
-        db.variants.create_index(
-            [("product_id", 1), ("color_lower", 1), ("size", 1)],
-            unique=True,
-            name="variant_product_color_size_unique",
-        )
-        db.transactions.create_index([("created_at", -1)], name="transactions_created_at")
-        # Unique index on colors for active (non-deleted) colors only
-        db.colors.create_index(
-            [("product_id", 1), ("color_lower", 1)],
-            unique=True,
-            partialFilterExpression={"deleted": {"$ne": True}},
-            name="color_product_lower_unique_active"
-        )
-        db.stock_moves.create_index([("created_at", -1)], name="stock_moves_created_at")
-        db.activity_log.create_index([("created_at", -1)], name="activity_log_created_at")
-    except Exception as exc:
-        print(f"Index warning: {exc}")
-
-# ============================================================
-# AUTH (v1 — kredensial statis di server, belum ke database)
-# ============================================================
-@app.post("/api/login")
-async def login(payload: LoginInput):
-    if payload.username.strip() != ADMIN_USERNAME or payload.password != ADMIN_PASSWORD:
-        raise HTTPException(status_code=401, detail="Username atau sandi salah")
-    token = _make_token(ADMIN_USERNAME)
-    return {"token": token, "username": ADMIN_USERNAME, "message": "Login berhasil"}
-
-@app.post("/api/logout")
-async def logout(payload: LogoutInput):
-    return {"message": "Berhasil keluar"}
-
-# ============================================================
-# HEALTH / DASHBOARD
-# ============================================================
-@app.get("/api/health")
-async def health():
-    return {
-        "status": "ok",
-        "database": "mongodb" if USE_MONGO else "json-fallback",
-        "cloudinary": "enabled" if USE_CLOUDINARY else "disabled",
+    payload = {
+        "agent_code": LUNEXA_CONFIG["agent_code"],
+        "agent_token": LUNEXA_CONFIG["agent_token"],
+        "user_code": user.username,
+        "game_type": "slot",
+        "provider_code": provider_code,
+        "game_code": game_code,
+        "lang": "en"
     }
 
-@app.get("/api/dashboard")
-async def dashboard():
-    products = get_products()
-    variants = get_variants()
-    transactions = get_transactions()
-    local_today = datetime.now(timezone(timedelta(hours=7))).date()
-
-    today_trans = []
-    for t in transactions:
-        dt = parse_datetime(t.get("created_at"))
-        if dt:
-            if dt.tzinfo is None:
-                dt = dt.replace(tzinfo=timezone.utc)
-            if dt.astimezone(timezone(timedelta(hours=7))).date() == local_today:
-                today_trans.append(t)
-
-    warehouse_qty = sum(int(v.get("warehouse_qty", 0) or 0) for v in variants)
-    sale_qty = sum(int(v.get("sale_qty", 0) or 0) for v in variants)
-    sold_qty = sum(int(t.get("qty", 0) or 0) for t in today_trans)
-    revenue = sum(int(t.get("total_price", t.get("total", 0)) or 0) for t in today_trans)
-    capital = sum(int(v.get("hpp", 0) or 0) * int(v.get("warehouse_qty", 0) or 0) for v in variants)
-    profit = sum(int(t.get("profit", 0) or 0) for t in today_trans)
-
-    enriched_transactions = []
-    products_by_id = product_map()
-    for t in transactions:
-        item = dict(t)
-        item["id"] = str(t.get("_id", t.get("id", "")))
-        item["variant_id"] = str(t.get("variant_id", ""))
-        p = products_by_id.get(str(t.get("product_id")), {})
-        item["product_name"] = t.get("product_name") or p.get("name", "")
-        item["model"] = t.get("model") or p.get("model", "")
-        item["image_url"] = t.get("image_url") or p.get("image_url")
-        item["total"] = int(t.get("total_price", t.get("total", 0)) or 0)
-        enriched_transactions.append(item)
-
-    recent = enriched_transactions[:5]
-    product_sales = {}
-    for t in today_trans:
-        pid = str(t.get("product_id", ""))
-        entry = product_sales.setdefault(pid, {"product_id": pid, "sold_qty": 0, "revenue": 0})
-        entry["sold_qty"] += int(t.get("qty", 0) or 0)
-        entry["revenue"] += int(t.get("total_price", t.get("total", 0)) or 0)
-
-    top = []
-    for entry in sorted(product_sales.values(), key=lambda x: (-x["sold_qty"], -x["revenue"])):
-        p = products_by_id.get(entry["product_id"], {})
-        top.append({**entry, "product_name": p.get("name", ""), "model": p.get("model", ""), "image_url": p.get("image_url")})
-
-    return json_safe({
-        "total_products": len(products), "total_variants": len(variants), "warehouse_qty": warehouse_qty, "sale_qty": sale_qty,
-        "sold_qty_today": sold_qty, "revenue_today": revenue, "profit_today": profit, "transactions_today": len(today_trans),
-        "transaction_count_today": len(today_trans), "total_capital": capital, "capital": capital, "recent_transactions": recent, "top_products": top,
-    })
-
-# ============================================================
-# PRODUCTS
-# ============================================================
-@app.get("/api/products")
-async def list_products():
-    return json_safe([
-        {
-            "_id": str(p.get("_id", p.get("id"))),
-            "id": str(p.get("_id", p.get("id"))),
-            "name": p.get("name", ""),
-            "model": p.get("model", ""),
-            "image_url": p.get("image_url"),
-        }
-        for p in get_products()
-    ])
-
-@app.post("/api/products")
-async def create_product(product: ProductInput):
-    for color in product.colors:
-        color_key, color_stops = color_identity(color.color_type, color.color, color.color_hex, color.color_stops)
-        if any(s.minimum_price > s.normal_price for s in color.sizes):
-            raise HTTPException(status_code=400, detail=f"Harga minimum warna {color.color} melebihi harga normal")
-        if len({normalize_color(s.size) for s in color.sizes}) != len(color.sizes):
-            raise HTTPException(status_code=400, detail=f"Duplikat size pada warna {color.color}")
-    identities = [color_identity(c.color_type, c.color, c.color_hex, c.color_stops)[0] for c in product.colors]
-    if len(set(identities)) != len(identities):
-        raise HTTPException(status_code=400, detail="Duplikat warna/gradient dalam produk")
-
-    created = now_utc()
-
-    if USE_MONGO:
-        product_doc = {
-            "_id": ObjectId(),
-            "name": product.name.strip(),
-            "model": product.model.strip(),
-            "image_url": None,
-            "created_at": created,
-            "deleted": False,
-        }
-        db.products.insert_one(product_doc)
+    async with httpx.AsyncClient() as client:
         try:
-            for color in product.colors:
-                color_key, color_stops = color_identity(color.color_type, color.color, color.color_hex, color.color_stops)
-                color_doc = {
-                    "_id": ObjectId(),
-                    "product_id": product_doc["_id"],
-                    "color": color.color.strip(),
-                    "color_type": color.color_type,
-                    "color_lower": color_key,
-                    "color_hex": color.color_hex or "#cccccc",
-                    "color_stops": color_stops,
-                    "created_at": created,
-                    "deleted": False,
-                }
-                db.colors.insert_one(color_doc)
-                for size in color.sizes:
-                    db.variants.insert_one({
-                        "_id": ObjectId(),
-                        "product_id": product_doc["_id"],
-                        "color_id": color_doc["_id"],
-                        "color": color.color.strip(),
-                        "color_type": color.color_type,
-                        "color_lower": color_key,
-                        "color_hex": color.color_hex or "#cccccc",
-                        "color_stops": color_stops,
-                        "size": size.size.strip(),
-                        "warehouse_qty": size.warehouse_qty,
-                        "sale_qty": 0,
-                        "hpp": size.hpp,
-                        "normal_price": size.normal_price,
-                        "minimum_price": size.minimum_price,
-                        "created_at": created,
-                        "deleted": False,
-                    })
-        except DuplicateKeyError:
-            db.products.delete_one({"_id": product_doc["_id"]})
-            db.colors.delete_many({"product_id": product_doc["_id"]})
-            db.variants.delete_many({"product_id": product_doc["_id"]})
-            raise HTTPException(status_code=400, detail="Kombinasi warna + size duplikat")
-        total_sizes = sum(len(c.sizes) for c in product.colors)
-        add_activity_log("product_created", f"Produk \"{product.name.strip()} {product.model.strip()}\" ditambahkan ({len(product.colors)} warna, {total_sizes} size)", {"product_id": str(product_doc["_id"]), "name": product.name.strip(), "model": product.model.strip()})
-        return {"id": str(product_doc["_id"]), "message": "Produk berhasil dibuat"}
+            url_api = f"{LUNEXA_CONFIG['base_url']}/game_launch"
+            res = await client.post(url_api, json=payload, timeout=5.0)
+            data = res.json()
 
-    products = load_json("products", {"items": []})
-    variants = load_json("variants", {"items": []})
-    colors = load_json("colors", {"items": []})
-    product_id = secrets.token_hex(12)
-    pdoc = {"id": product_id, "name": product.name.strip(), "model": product.model.strip(), "image_url": None, "created_at": created.isoformat(), "deleted": False}
-    products["items"].append(pdoc)
-    for color in product.colors:
-        color_id = secrets.token_hex(12)
-        color_key, color_stops = color_identity(color.color_type, color.color, color.color_hex, color.color_stops)
-        cdoc = {"id": color_id, "product_id": product_id, "color": color.color.strip(), "color_type": color.color_type, "color_lower": color_key, "color_hex": color.color_hex or "#cccccc", "color_stops": color_stops, "created_at": created.isoformat(), "deleted": False}
-        colors["items"].append(cdoc)
-        for size in color.sizes:
-            variants["items"].append({"id": secrets.token_hex(12), "product_id": product_id, "color_id": color_id, "color": color.color.strip(), "color_type": color.color_type, "color_lower": color_key, "color_hex": color.color_hex or "#cccccc", "color_stops": color_stops, "size": size.size.strip(), "warehouse_qty": size.warehouse_qty, "sale_qty": 0, "hpp": size.hpp, "normal_price": size.normal_price, "minimum_price": size.minimum_price, "created_at": created.isoformat(), "deleted": False})
-    save_json("products", products)
-    save_json("colors", colors)
-    save_json("variants", variants)
-    total_sizes = sum(len(c.sizes) for c in product.colors)
-    add_activity_log("product_created", f"Produk \"{product.name.strip()} {product.model.strip()}\" ditambahkan ({len(product.colors)} warna, {total_sizes} size)", {"product_id": product_id, "name": product.name.strip(), "model": product.model.strip()})
-    return {"id": product_id, "message": "Produk berhasil dibuat"}
+            if data.get("status") == 1:
+                return RedirectResponse(url=data.get("launch_url"))
+            
+            user.balance += Decimal(str(amount_to_send))
+            db.commit()
+            return {"status": 0, "msg": "Gagal memuat game."}
+        except:
+            user.balance += Decimal(str(amount_to_send))
+            db.commit()
+            return {"status": 0, "msg": "Error koneksi."}
 
-@app.get("/api/products/{product_id}")
-async def get_product(product_id: str):
-    products = product_map()
-    product = products.get(product_id)
-    if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-    variants = [v for v in get_variants() if str(v.get("product_id")) == product_id]
-    return json_safe({
-        "id": product_id,
-        "_id": product_id,
-        "name": product.get("name", ""),
-        "model": product.get("model", ""),
-        "image_url": product.get("image_url"),
-        "variants": enrich_variants(variants),
-    })
+# ================= REGISTER =================
+@app.post("/register")
+async def register(req: Request, db: Session = Depends(get_db)):
+    try:
+        body = await req.json()
+        username = body.get("username")
+        password = body.get("password")
+        contact = body.get("contact")
+        
+        ref = req.query_params.get("ref")
 
-@app.put("/api/products/{product_id}")
-async def update_product(product_id: str, name: str = Form(...), model: str = Form(...)):
-    if not str(name).strip() or not str(model).strip():
-        raise HTTPException(status_code=400, detail="Nama dan seri wajib diisi")
-    if USE_MONGO:
-        result = db.products.update_one({"_id": oid(product_id), "deleted": {"$ne": True}}, {"$set": {"name": name.strip(), "model": model.strip()}})
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-    else:
-        data = load_json("products", {"items": []})
-        found = next((p for p in data["items"] if str(p.get("id")) == product_id and not p.get("deleted")), None)
-        if not found:
-            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-        found.update({"name": name.strip(), "model": model.strip()})
-        save_json("products", data)
-    add_activity_log("product_updated", f"Produk \"{name.strip()} {model.strip()}\" diperbarui", {"product_id": product_id, "name": name.strip(), "model": model.strip()})
-    return {"message": "Produk diperbarui"}
+        if not username or not password or not contact:
+            raise HTTPException(status_code=400, detail="Isi setidaknya email atau nomor HP")
+            
+        email = None
+        phone = None
+        if is_email(contact):
+            email = contact
+        elif is_phone(contact):
+            phone = contact
+        else:
+            raise HTTPException(status_code=400, detail="Contact harus email atau nomor HP yang valid")
 
-@app.delete("/api/products/{product_id}")
-async def delete_product(product_id: str):
-    product = find_product(product_id)
-    product_label = f"{product.get('name','')} {product.get('model','')}".strip() if product else product_id
-    if USE_MONGO:
-        result = db.products.update_one({"_id": oid(product_id)}, {"$set": {"deleted": True}})
-        if result.matched_count == 0:
-            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-        db.variants.update_many({"product_id": oid(product_id)}, {"$set": {"deleted": True}})
-        db.colors.update_many({"product_id": oid(product_id)}, {"$set": {"deleted": True}})
-    else:
-        products = load_json("products", {"items": []})
-        found = next((p for p in products["items"] if str(p.get("id")) == product_id), None)
-        if not found:
-            raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-        found["deleted"] = True
-        for name in ("variants", "colors"):
-            data = load_json(name, {"items": []})
-            for item in data["items"]:
-                if str(item.get("product_id")) == product_id:
-                    item["deleted"] = True
-            save_json(name, data)
-        save_json("products", products)
-    add_activity_log("product_deleted", f"Produk \"{product_label}\" dihapus", {"product_id": product_id})
-    return {"message": "Produk dihapus"}
+        if db.query(User).filter(User.username == username).first():
+            raise HTTPException(status_code=400, detail="Username sudah digunakan")
+        if email and db.query(User).filter(User.email == email).first():
+            raise HTTPException(status_code=400, detail="Email sudah digunakan")
+        if phone and db.query(User).filter(User.phone == phone).first():
+            raise HTTPException(status_code=400, detail="Nomor HP sudah digunakan")
 
-# ============================================================
-# IMAGE
-# ============================================================
-async def upload_image_to_cloudinary(content: bytes, filename: str) -> str:
-    if not USE_CLOUDINARY:
-        digest = hashlib.sha256(content).hexdigest()[:32]
-        path = UPLOAD_DIR / f"{digest}.bin"
-        path.write_bytes(content)
-        return f"/uploads/{path.name}"
+        referrer_id = None
+        if ref:
+            ref_user = db.query(User).filter(User.ref_code == ref).first()
+            if ref_user:
+                referrer_id = ref_user.id
 
-    import requests
-    import hashlib as _hashlib
-    from starlette.concurrency import run_in_threadpool
-    timestamp = int(time.time())
-    signature_base = f"timestamp={timestamp}{CLOUDINARY_API_SECRET}"
-    signature = _hashlib.sha1(signature_base.encode("utf-8")).hexdigest()
-    url = f"https://api.cloudinary.com/v1_1/{CLOUDINARY_CLOUD_NAME}/image/upload"
-    files = {"file": (filename, content)}
-    data = {"api_key": CLOUDINARY_API_KEY, "timestamp": timestamp, "signature": signature}
-    # requests.post is blocking (sync) I/O — run it in a thread pool so it doesn't
-    # freeze the whole async event loop while waiting on Cloudinary's network round-trip.
-    response = await run_in_threadpool(requests.post, url, files=files, data=data, timeout=30)
-    if response.status_code != 200:
-        raise HTTPException(status_code=502, detail="Upload gambar ke Cloudinary gagal")
-    return response.json()["secure_url"]
+        new_ref_code = uuid.uuid4().hex[:8].upper()
 
-@app.post("/api/products/{product_id}/image")
-async def upload_product_image(product_id: str, image: UploadFile):
-    if image.content_type not in {"image/jpeg", "image/png", "image/webp"}:
-        raise HTTPException(status_code=400, detail="Format harus JPEG/PNG/WebP")
-    content = await image.read()
-    if len(content) > 5 * 1024 * 1024:
-        raise HTTPException(status_code=400, detail="Ukuran maksimal 5MB")
+        user = User(
+            username=username,
+            email=email,
+            phone=phone,
+            password_hash=hash_password(password),
+            balance=Decimal("0.00"),
+            ref_code=new_ref_code,
+            referred_by=referrer_id,
+            ref_earnings=Decimal("0.00")
+        )
 
-    product = find_product(product_id)
-    if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
-    is_replacing_existing = bool(product.get("image_url"))
+        db.add(user)
+        try:
+            db.commit()
+            db.refresh(user)
+            
+            await create_lunexa_user(username)
 
-    url = await upload_image_to_cloudinary(content, image.filename or "product.jpg")
-    if USE_MONGO:
-        db.products.update_one({"_id": oid(product_id)}, {"$set": {"image_url": url}})
-    else:
-        data = load_json("products", {"items": []})
-        found = next((p for p in data["items"] if str(p.get("id")) == product_id), None)
-        if found:
-            found["image_url"] = url
-            save_json("products", data)
-    if is_replacing_existing:
-        label = f"{product.get('name','')} {product.get('model','')}".strip()
-        add_activity_log("image_updated", f"Gambar produk \"{label}\" diperbarui", {"product_id": product_id})
-    return {"image_url": url, "message": "Gambar utama produk berhasil disimpan"}
+        except IntegrityError:
+            db.rollback()
+            raise HTTPException(status_code=400, detail="Username / Contact sudah terdaftar")
 
-def find_product(product_id: str):
-    if USE_MONGO:
-        return db.products.find_one({"_id": oid(product_id), "deleted": {"$ne": True}})
-    return next((p for p in get_products() if str(p.get("id")) == product_id), None)
+        return {"msg": "Akun berhasil dibuat"}
 
-@app.get("/uploads/{filename}")
-async def serve_upload(filename: str):
-    safe_name = Path(filename).name
-    path = UPLOAD_DIR / safe_name
-    if path.exists():
-        return FileResponse(path)
-    raise HTTPException(status_code=404, detail="File tidak ditemukan")
+    except HTTPException as he:
+        raise he
+    except Exception as e:
+        print("REGISTER ERROR:", e)
+        raise HTTPException(status_code=500, detail="Register error")
+# ================= REFERRAL ENDPOINT =================
 
-# ============================================================
-# VARIANTS / STOCK
-# ============================================================
-@app.get("/api/variants")
-async def list_variants(product_id: Optional[str] = Query(None)):
-    variants = get_variants()
-    if product_id:
-        variants = [v for v in variants if str(v.get("product_id")) == product_id]
-    return enrich_variants(variants)
+@app.get("/referralbe")
+def get_referral_data(db: Session = Depends(get_db), current_user: User = Depends(get_current_user)):
+    user = db.query(User).filter(User.id == current_user.id).first()
+    
+    if not user.ref_code:
+        user.ref_code = uuid.uuid4().hex[:8].upper()
+        db.commit()
+        db.refresh(user)
 
-@app.post("/api/variants")
-async def create_variant(variant: VariantInput):
-    if variant.minimum_price > variant.normal_price:
-        raise HTTPException(status_code=400, detail="Harga minimum tidak boleh melebihi harga normal")
-    product = find_product(variant.product_id)
-    if not product:
-        raise HTTPException(status_code=404, detail="Produk tidak ditemukan")
+    referred_users = db.query(User).filter(User.referred_by == user.id).all()
+    
+    user_list = []
+        
+    for u in referred_users:
+        masked_phone = "Tidak ada"
 
-    color_norm, color_stops = color_identity(variant.color_type, variant.color, variant.color_hex, variant.color_stops)
-    size = variant.size.strip()
+        if u.phone:
+            masked_phone = u.phone[:5] + "****"
 
-    if USE_MONGO:
-        product_oid = oid(variant.product_id)
-        # Compare size case-insensitively as well, so "40" and "40 " / "m" and "M" cannot create duplicates.
-        existing_candidates = db.variants.find({
-            "product_id": product_oid,
-            "color_lower": color_norm,
-            "deleted": {"$ne": True},
+        user_list.append({
+            "username": u.username,
+            "phone": masked_phone
         })
-        if any(normalize_color(v.get("size")) == normalize_color(size) for v in existing_candidates):
-            raise HTTPException(status_code=400, detail=f"Duplikat: warna {variant.color} dengan size {size} sudah ada")
-        color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
-        if not color:
-            # Simple approach: find any existing doc (including deleted), restore it
-            # Otherwise create new. No upsert, no index conflicts.
-            existing = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm})
-            if existing:
-                # Restore if deleted, update color/hex if needed
-                db.colors.update_one(
-                    {"_id": existing["_id"]},
-                    {"$set": {"deleted": False, "color": variant.color.strip(), "color_hex": variant.color_hex or "#cccccc"}}
-                )
-                color = db.colors.find_one({"_id": existing["_id"]})
-            else:
-                # Create new color
-                color_doc = {
-                    "_id": ObjectId(),
-                    "product_id": product_oid,
-                    "color": variant.color.strip(),
-                    "color_lower": color_norm,
-                    "color_hex": variant.color_hex or "#cccccc",
-                    "created_at": now_utc(),
-                    "deleted": False
-                }
-                try:
-                    db.colors.insert_one(color_doc)
-                    color = color_doc
-                except DuplicateKeyError:
-                    # Race: another request created it
-                    color = db.colors.find_one({"product_id": product_oid, "color_lower": color_norm, "deleted": {"$ne": True}})
-                    if not color:
-                        raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
-        doc = {
-            "_id": ObjectId(),
-            "product_id": product_oid,
-            "color_id": color["_id"],
-            "color": color["color"],
-            "color_type": color.get("color_type") or variant.color_type,
-            "color_lower": color_norm,
-            "color_hex": color.get("color_hex") or variant.color_hex or "#cccccc",
-            "color_stops": color.get("color_stops") or color_stops,
-            "size": size,
-            "warehouse_qty": variant.warehouse_qty,
-            "sale_qty": 0,
-            "hpp": variant.hpp,
-            "normal_price": variant.normal_price,
-            "minimum_price": variant.minimum_price,
-            "created_at": now_utc(),
-            "deleted": False,
-        }
-        try:
-            db.variants.insert_one(doc)
-        except DuplicateKeyError:
-            raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
-        label = f"{product.get('name','')} {product.get('model','')}".strip()
-        add_activity_log("variant_created", f"Warna/size baru \"{variant.color.strip()} · {size}\" ditambahkan ke \"{label}\" ({variant.warehouse_qty} unit)", {"product_id": str(variant.product_id), "variant_id": str(doc["_id"]), "color": variant.color.strip(), "size": size})
-        return {"id": str(doc["_id"]), "message": "Varian berhasil ditambahkan"}
-    data = load_json("variants", {"items": []})
-    for v in data["items"]:
-        if str(v.get("product_id")) == variant.product_id and str(v.get("color_lower")) == color_norm and str(v.get("size")).strip().lower() == size.lower() and not v.get("deleted"):
-            raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
-    color_data = load_json("colors", {"items": []})
-    color = next((c for c in color_data["items"] if str(c.get("product_id")) == variant.product_id and str(c.get("color_lower")) == color_norm and not c.get("deleted")), None)
-    if not color:
-        color = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color": variant.color.strip(), "color_type": variant.color_type, "color_lower": color_norm, "color_hex": variant.color_hex or "#cccccc", "color_stops": color_stops, "created_at": now_utc().isoformat(), "deleted": False}
-        color_data["items"].append(color)
-        save_json("colors", color_data)
-    doc = {"id": secrets.token_hex(12), "product_id": variant.product_id, "color_id": color["id"], "color": color["color"], "color_type": color.get("color_type") or variant.color_type, "color_lower": color_norm, "color_hex": color.get("color_hex") or variant.color_hex or "#cccccc", "color_stops": color.get("color_stops") or color_stops, "size": size, "warehouse_qty": variant.warehouse_qty, "sale_qty": 0, "hpp": variant.hpp, "normal_price": variant.normal_price, "minimum_price": variant.minimum_price, "created_at": now_utc().isoformat(), "deleted": False}
-    data["items"].append(doc)
-    save_json("variants", data)
-    label = f"{product.get('name','')} {product.get('model','')}".strip()
-    add_activity_log("variant_created", f"Warna/size baru \"{variant.color.strip()} · {size}\" ditambahkan ke \"{label}\" ({variant.warehouse_qty} unit)", {"product_id": str(variant.product_id), "variant_id": doc["id"], "color": variant.color.strip(), "size": size})
-    return {"id": doc["id"], "message": "Varian berhasil ditambahkan"}
 
-@app.put("/api/variants/{variant_id}")
-async def update_variant(variant_id: str, variant: VariantUpdate):
-    existing = find_variant(variant_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-
-    update = {}
-    if variant.product_id is not None:
-        if not find_product(variant.product_id):
-            raise HTTPException(status_code=404, detail="Produk tujuan tidak ditemukan")
-        update["product_id"] = oid(variant.product_id) if USE_MONGO else variant.product_id
-    if variant.color is not None:
-        update["color"] = variant.color.strip()
-    if variant.color_type is not None:
-        update["color_type"] = variant.color_type.strip().lower()
-    if variant.color_hex is not None:
-        update["color_hex"] = normalize_hex_value(variant.color_hex)
-    if variant.color_stops is not None:
-        update["color_stops"] = normalize_color_stops(update.get("color_type", existing.get("color_type", "solid")), variant.color_stops)
-    if variant.color is not None or variant.color_type is not None or variant.color_hex is not None or variant.color_stops is not None:
-        final_type = update.get("color_type", existing.get("color_type", "solid"))
-        final_color = update.get("color", existing.get("color", ""))
-        final_hex = update.get("color_hex", existing.get("color_hex", "#cccccc"))
-        final_stops = update.get("color_stops", existing.get("color_stops"))
-        color_key, normalized_stops = color_identity(final_type, final_color, final_hex, final_stops)
-        update["color_type"] = final_type
-        update["color_lower"] = color_key
-        update["color_hex"] = normalized_stops[0]
-        update["color_stops"] = normalized_stops
-    if variant.size is not None:
-        update["size"] = variant.size.strip()
-    for field in ("warehouse_qty", "hpp", "normal_price", "minimum_price"):
-        value = getattr(variant, field)
-        if value is not None:
-            update[field] = value
-
-    final_min = int(update.get("minimum_price", existing.get("minimum_price", 0)))
-    final_normal = int(update.get("normal_price", existing.get("normal_price", 0)))
-    if final_min > final_normal:
-        raise HTTPException(status_code=400, detail="Harga minimum tidak boleh melebihi harga normal")
-
-    if USE_MONGO:
-        target_product_id = update.get("product_id", existing.get("product_id"))
-        target_color = str(update.get("color_lower", existing.get("color_lower", normalize_color(str(update.get("color", existing.get("color", "")))))))
-        target_size = normalize_color(str(update.get("size", existing.get("size", ""))))
-        duplicate_candidates = db.variants.find({
-            "product_id": target_product_id,
-            "color_lower": target_color,
-            "deleted": {"$ne": True},
-        })
-        for candidate in duplicate_candidates:
-            if str(candidate.get("_id")) != str(existing.get("_id")) and normalize_color(candidate.get("size")) == target_size:
-                raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
-
-        color_changed = any(k in update for k in ("color", "color_type", "color_lower", "color_hex", "color_stops", "product_id"))
-        if color_changed:
-            color_name = str(update.get("color", existing.get("color", ""))).strip() or "Gradient"
-            color_type = str(update.get("color_type", existing.get("color_type", "solid"))).strip().lower()
-            color_hex = update.get("color_hex", existing.get("color_hex", "#cccccc"))
-            color_stops = update.get("color_stops", existing.get("color_stops"))
-            color_key, normalized_stops = color_identity(color_type, color_name, color_hex, color_stops)
-            color_query = {"product_id": target_product_id, "color_lower": color_key, "deleted": {"$ne": True}}
-            color = db.colors.find_one(color_query)
-            if not color:
-                color = {"_id": ObjectId(), "product_id": target_product_id, "color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops, "created_at": now_utc(), "deleted": False}
-                try:
-                    db.colors.insert_one(color)
-                except DuplicateKeyError:
-                    color = db.colors.find_one(color_query)
-                    if not color:
-                        raise HTTPException(status_code=500, detail="Gagal membuat/menemukan warna")
-            else:
-                db.colors.update_one({"_id": color["_id"]}, {"$set": {"deleted": False, "color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops}})
-            update["color_id"] = color["_id"]
-            update["color"] = color_name
-            update["color_type"] = color_type
-            update["color_lower"] = color_key
-            update["color_hex"] = normalized_stops[0]
-            update["color_stops"] = normalized_stops
-        try:
-            db.variants.update_one({"_id": oid(variant_id)}, {"$set": update})
-        except DuplicateKeyError:
-            raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
-    else:
-        data = load_json("variants", {"items": []})
-        found = next((v for v in data["items"] if str(v.get("id")) == variant_id and not v.get("deleted")), None)
-        if not found:
-            raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-        target_product = str(update.get("product_id", found.get("product_id")))
-        target_color = str(update.get("color_lower", found.get("color_lower", normalize_color(str(update.get("color", found.get("color", "")))))))
-        target_size = normalize_color(str(update.get("size", found.get("size", ""))))
-        for candidate in data["items"]:
-            if str(candidate.get("id")) == variant_id or candidate.get("deleted") or str(candidate.get("product_id")) != target_product:
-                continue
-            if str(candidate.get("color_lower")) == target_color and normalize_color(candidate.get("size")) == target_size:
-                raise HTTPException(status_code=400, detail="Kombinasi warna + size sudah ada")
-        if any(k in update for k in ("color", "color_type", "color_lower", "color_hex", "color_stops", "product_id")):
-            color_name = str(update.get("color", found.get("color", ""))).strip() or "Gradient"
-            color_type = str(update.get("color_type", found.get("color_type", "solid"))).strip().lower()
-            color_key, normalized_stops = color_identity(color_type, color_name, update.get("color_hex", found.get("color_hex", "#cccccc")), update.get("color_stops", found.get("color_stops")))
-            update.update({"color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops})
-            color_data = load_json("colors", {"items": []})
-            color = next((c for c in color_data["items"] if str(c.get("product_id")) == target_product and str(c.get("color_lower")) == color_key and not c.get("deleted")), None)
-            if not color:
-                color = {"id": secrets.token_hex(12), "product_id": target_product, "color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops, "created_at": now_utc().isoformat(), "deleted": False}
-                color_data["items"].append(color)
-            else:
-                color.update({"color": color_name, "color_type": color_type, "color_lower": color_key, "color_hex": normalized_stops[0], "color_stops": normalized_stops})
-            update["color_id"] = color["id"]
-            save_json("colors", color_data)
-        found.update(update)
-        save_json("variants", data)
-    variant_product = find_product(update.get("product_id", existing.get("product_id")))
-    product_label = f"{variant_product.get('name','')} {variant_product.get('model','')}".strip() if variant_product else ""
-    final_color = update.get("color", existing.get("color", ""))
-    final_size = update.get("size", existing.get("size", ""))
-    add_activity_log("variant_updated", f"Warna/size \"{final_color} · {final_size}\" pada \"{product_label}\" diperbarui", {"variant_id": variant_id})
-    return {"message": "Varian diperbarui"}
-
-@app.delete("/api/variants/{variant_id}")
-async def delete_variant(variant_id: str):
-    existing = find_variant(variant_id)
-    if not existing:
-        raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-    if USE_MONGO:
-        db.variants.update_one({"_id": oid(variant_id)}, {"$set": {"deleted": True}})
-    else:
-        data = load_json("variants", {"items": []})
-        found = next(v for v in data["items"] if str(v.get("id")) == variant_id)
-        found["deleted"] = True
-        save_json("variants", data)
-    variant_product = find_product(existing.get("product_id"))
-    product_label = f"{variant_product.get('name','')} {variant_product.get('model','')}".strip() if variant_product else ""
-    add_activity_log("variant_deleted", f"Warna/size \"{existing.get('color','')} · {existing.get('size','')}\" pada \"{product_label}\" dihapus", {"variant_id": variant_id})
-    return {"message": "Varian dihapus"}
-
-# ============================================================
-# TRANSFER
-# ============================================================
-@app.post("/api/transfers")
-async def transfer_stock(transfer: TransferInput):
-    variant = find_variant(transfer.variant_id)
-    if not variant:
-        raise HTTPException(status_code=404, detail="Varian tidak ditemukan")
-
-    if USE_MONGO:
-        result = db.variants.update_one(
-            {"_id": oid(transfer.variant_id), "deleted": {"$ne": True}, "warehouse_qty": {"$gte": transfer.qty}},
-            {"$inc": {"warehouse_qty": -transfer.qty, "sale_qty": transfer.qty}},
-        )
-        if result.modified_count != 1:
-            raise HTTPException(status_code=400, detail="Stok gudang tidak mencukupi")
-    else:
-        data = load_json("variants", {"items": []})
-        found = next(v for v in data["items"] if str(v.get("id")) == transfer.variant_id and not v.get("deleted"))
-        if int(found.get("warehouse_qty", 0)) < transfer.qty:
-            raise HTTPException(status_code=400, detail=f"Stok gudang hanya {found.get('warehouse_qty', 0)} unit")
-        found["warehouse_qty"] = int(found.get("warehouse_qty", 0)) - transfer.qty
-        found["sale_qty"] = int(found.get("sale_qty", 0)) + transfer.qty
-        save_json("variants", data)
-
-    add_stock_move(transfer.variant_id, "warehouse", "sale", transfer.qty, "Transfer manual")
-    product = find_product(variant.get("product_id"))
-    product_label = f"{product.get('name','')} {product.get('model','')}".strip() if product else ""
-    add_activity_log("stock_transfer", f"Transfer stok \"{product_label}\" ({variant.get('color','')} · {variant.get('size','')}): {transfer.qty} unit dari gudang ke pasar", {"variant_id": str(transfer.variant_id), "qty": transfer.qty})
-    return {"message": f"Stok berhasil dipindahkan ({transfer.qty} unit)"}
-
-# ============================================================
-# TRANSACTIONS
-# ============================================================
-
-def add_stock_move_session(variant_id, from_type, to_type, qty, notes, session):
-    db.stock_moves.insert_one({"variant_id": oid(variant_id), "from_type": from_type, "to_type": to_type, "qty": int(qty), "notes": notes, "created_at": now_utc()}, session=session)
-def _build_transaction_doc(item: BatchItem, variant, payment_method: str, line_discount: int, invoice: str):
-    products = product_map()
-    product = products.get(str(variant.get("product_id")), {})
-    trans_id = ObjectId() if USE_MONGO else secrets.token_hex(12)
-    created = now_utc()
-    gross = item.qty * item.unit_price
-    total = gross - int(line_discount)
-    hpp = int(variant.get("hpp", 0))
+    total_referrals = len(user_list)
+    base_url = "https://bola433.my.id/login?ref=" 
+    
     return {
-        "_id": trans_id if USE_MONGO else None, "id": str(trans_id), "invoice_no": invoice,
-        "variant_id": oid(item.variant_id) if USE_MONGO else item.variant_id, "product_id": variant.get("product_id"),
-        "color": variant.get("color", ""), "size": variant.get("size", ""), "qty": item.qty,
-        "unit_price": item.unit_price, "gross_total": gross, "discount": int(line_discount), "total_price": total, "total": total,
-        "hpp": hpp, "profit": total - item.qty * hpp, "payment_method": payment_method,
-        "product_name": product.get("name", ""), "model": product.get("model", ""), "image_url": product.get("image_url"), "created_at": created,
+        "ref_code": user.ref_code,
+        "ref_link": f"{base_url}{user.ref_code}",
+        "total_referrals": total_referrals,
+        "earnings": float(user.ref_earnings or 0),
+        "joined_members": user_list 
     }
 
-def _validate_batch_items(items, requested_discount):
-    prepared = []; max_discount = 0; subtotal = 0; qty_by_variant = {}
-    variants_by_id = {}
-    for item in items:
-        variant_id = item.variant_id
-        variant = variants_by_id.get(variant_id)
-        if variant is None:
-            variant = find_variant(variant_id)
-            if not variant:
-                raise HTTPException(status_code=404, detail=f"Varian {variant_id} tidak ditemukan")
-            variants_by_id[variant_id] = variant
-        validate_price(variant, item.unit_price)
-        qty_by_variant[variant_id] = qty_by_variant.get(variant_id, 0) + item.qty
-        subtotal += item.qty * item.unit_price
-        max_discount += item.qty * max(0, item.unit_price - int(variant.get("minimum_price", 0)))
-        prepared.append((item, variant))
 
-    # A cart may contain the same variant more than once when the user
-    # manually entered different selling prices. Validate the combined
-    # quantity so duplicate lines cannot oversell the same stock.
-    for variant_id, total_qty in qty_by_variant.items():
-        variant = variants_by_id[variant_id]
-        if int(variant.get("sale_qty", 0)) < total_qty:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Stok jual {variant.get('color','')} {variant.get('size','')} tidak mencukupi",
+
+# ================= GOOGLE LOGIN =================
+
+@app.get("/auth/google")
+async def auth_google(request: Request):
+    redirect_uri = "https://bola433.my.id/auth/google/callback"
+    return await oauth.google.authorize_redirect(request, redirect_uri)
+
+
+@app.get("/auth/google/callback")
+async def auth_google_callback(request: Request, db: Session = Depends(get_db)):
+    try:
+        token = await oauth.google.authorize_access_token(request)
+
+        user_info = token.get("userinfo")
+
+        if not user_info:
+            user_info = await oauth.google.parse_id_token(request, token)
+
+        email = user_info["email"].lower()
+
+        user = db.query(User).filter(User.email == email).first()
+
+        if not user:
+
+            username_base = email.split("@")[0]
+            username = username_base
+            counter = 1
+
+            while db.query(User).filter(User.username == username).first():
+                username = f"{username_base}{counter}"
+                counter += 1
+
+            user = User(
+                username=username,
+                email=email,
+                password_hash="google_login",
+                provider="google",
+                balance=Decimal("0.00"),
+                ref_code=uuid.uuid4().hex[:8].upper()
             )
 
-    if requested_discount > max_discount:
-        raise HTTPException(status_code=400, detail=f"Diskon maksimal adalah {max_discount}")
-    return prepared, subtotal, max_discount
+            db.add(user)
+            db.commit()
+            db.refresh(user)
 
-def create_one_transaction(item: BatchItem, payment_method: str, line_discount: int = 0, invoice: str | None = None, session=None):
-    payment_method = validate_payment_method(payment_method)
-    variant = find_variant(item.variant_id)
-    if not variant:
-        raise HTTPException(status_code=404, detail=f"Varian {item.variant_id} tidak ditemukan")
-    if int(variant.get("sale_qty", 0)) < item.qty:
-        raise HTTPException(status_code=400, detail=f"Stok jual hanya {variant.get('sale_qty', 0)} unit")
-    validate_price(variant, item.unit_price)
-    invoice = invoice or invoice_no()
-    doc = _build_transaction_doc(item, variant, payment_method, line_discount, invoice)
-    if USE_MONGO:
-        result = db.variants.update_one({"_id": oid(item.variant_id), "deleted": {"$ne": True}, "sale_qty": {"$gte": item.qty}}, {"$inc": {"sale_qty": -item.qty}}, session=session)
-        if result.modified_count != 1:
-            raise HTTPException(status_code=400, detail="Stok jual berubah atau tidak mencukupi")
-        db.transactions.insert_one(doc, session=session)
-        add_stock_move_session(item.variant_id, "sale", "sold", item.qty, f"Transaksi {invoice}", session)
-    else:
-        data = load_json("variants", {"items": []})
-        found = next(v for v in data["items"] if str(v.get("id")) == item.variant_id and not v.get("deleted"))
-        if int(found.get("sale_qty", 0)) < item.qty:
-            raise HTTPException(status_code=400, detail="Stok jual berubah atau tidak mencukupi")
-        found["sale_qty"] = int(found.get("sale_qty", 0)) - item.qty
-        save_json("variants", data)
-        doc["created_at"] = doc["created_at"].isoformat(); doc.pop("_id", None)
-        txs=load_json("transactions", {"items": []}); txs["items"].append(json_safe(doc)); save_json("transactions", txs)
-    if USE_MONGO and session is not None:
-        pass
-    else:
-        add_stock_move(item.variant_id, "sale", "sold", item.qty, f"Transaksi {invoice}")
-    return json_safe(doc)
+            await create_lunexa_user(username)
 
-@app.post("/api/transactions")
-async def create_transaction(transaction: TransactionInput):
-    transaction.payment_method = validate_payment_method(transaction.payment_method)
-    item = BatchItem(variant_id=transaction.variant_id, qty=transaction.qty, unit_price=transaction.unit_price)
-    doc = create_one_transaction(item, transaction.payment_method or "cash")
-    return {"id": doc["id"], "invoice_no": doc["invoice_no"], "message": "Transaksi berhasil dicatat", "profit": doc["profit"], "total": doc["total"]}
+        jwt_token = create_access_token({"sub": str(user.id)})
+        
+        response = RedirectResponse(url="/sportbook")
 
-@app.post("/api/transactions/batch")
-async def create_batch_transaction(batch: BatchTransactionInput):
-    payment_method = validate_payment_method(batch.payment_method)
-    if len(batch.items) > 100:
-        raise HTTPException(status_code=400, detail="Maksimal 100 item per transaksi")
-    prepared, subtotal, max_discount = _validate_batch_items(batch.items, batch.discount)
-    remaining = int(batch.discount)
-    line_discounts = []
-    for item, variant in prepared:
-        line_cap = item.qty * max(0, item.unit_price - int(variant.get("minimum_price", 0)))
-        line_discount = min(remaining, line_cap)
-        remaining -= line_discount
-        line_discounts.append(line_discount)
-    invoice = invoice_no()
+        response.set_cookie(
+            key="token",
+            value=jwt_token,
+            httponly=False,  
+            secure=True,     # Wajib True kalau pake samesite="none"
+            samesite="lax",  # Gunakan "lax" biar cookie ikut saat redirect dari Google ke bola433
+            max_age=86400,   # Berlaku 24 jam
+            path="/"         # Wajib ada biar kebaca di semua path /api/
+        )
 
-    if USE_MONGO:
-        try:
-            with mongo_client.start_session() as session:
-                with session.start_transaction():
-                    docs = [create_one_transaction(item, payment_method, line_discounts[i], invoice, session) for i, (item, _) in enumerate(prepared)]
-        except Exception as exc:
-            if isinstance(exc, HTTPException):
-                raise
-            raise HTTPException(status_code=500, detail=f"Checkout gagal dan seluruh perubahan dibatalkan: {exc}")
-    else:
-        # JSON fallback has no database transaction primitive; use a snapshot and restore on failure.
-        snapshot = {name: load_json(name, {"items": []}) for name in ("variants", "transactions", "stock_moves")}
-        try:
-            docs = [create_one_transaction(item, payment_method, line_discounts[i], invoice) for i, (item, _) in enumerate(prepared)]
-        except Exception:
-            for name, data in snapshot.items(): save_json(name, data)
-            raise
-    return {"invoice_no": invoice, "message": f"{len(docs)} item transaksi berhasil dicatat", "items": docs, "total": sum(int(d["total"]) for d in docs), "discount": batch.discount, "subtotal": subtotal, "profit": sum(int(d["profit"]) for d in docs)}
+        return response
 
-@app.get("/api/transactions")
-async def list_transactions(limit: int = Query(100, ge=1, le=5000)):
-    transactions = get_transactions()
-    products = product_map()
-    output = []
-    for t in transactions[:limit]:
-        item = dict(t)
-        item["id"] = str(t.get("_id", t.get("id", "")))
-        item["variant_id"] = str(t.get("variant_id", ""))
-        p = products.get(str(t.get("product_id")), {})
-        item["product_name"] = t.get("product_name") or p.get("name", "")
-        item["model"] = t.get("model") or p.get("model", "")
-        item["image_url"] = t.get("image_url") or p.get("image_url")
-        item["total"] = int(t.get("total", t.get("total_price", 0)) or 0)
-        output.append(item)
-    return json_safe(output)
+    except Exception as e:
+        print("GOOGLE LOGIN ERROR:", e)
+        return RedirectResponse("/login?error=google_login_failed")
+        
+# ================= LOGIN =================
+@app.post("/login")
+async def login(req: Request, db: Session = Depends(get_db)):
 
-@app.get("/api/activity-log")
-async def list_activity_log(limit: int = Query(300, ge=1, le=1000)):
-    if USE_MONGO:
-        docs = list(db.activity_log.find().sort("created_at", -1).limit(limit))
-    else:
-        data = load_json("activity_log", {"items": []})
-        docs = sorted(data["items"], key=lambda d: d.get("created_at", ""), reverse=True)[:limit]
-    output = [{
-        "id": str(d.get("_id", d.get("id", ""))),
-        "action": d.get("action", ""),
-        "description": d.get("description", ""),
-        "meta": d.get("meta", {}),
-        "created_at": d.get("created_at"),
-    } for d in docs]
-    return json_safe(output)
+    try:
+        body = await req.json()
 
-# ============================================================
-# COLORS
-# ============================================================
-@app.get("/api/colors")
-async def list_colors(product_id: Optional[str] = Query(None)):
-    colors = get_colors()
-    if product_id:
-        colors = [c for c in colors if str(c.get("product_id")) == product_id]
-    return json_safe([
-        {
-            **c,
-            "id": str(c.get("_id", c.get("id", ""))),
-            "product_id": str(c.get("product_id", "")),
+        username = body.get("username")
+        password = body.get("password")
+
+        if not username or not password:
+            raise HTTPException(
+                status_code=400,
+                detail="Username dan password wajib diisi"
+            )
+
+        user = db.query(User).filter(
+           or_(
+                User.username == username,
+                User.email == username,
+                User.phone == username
+            )
+        ).first()
+
+
+        if not user:
+            raise HTTPException(
+                status_code=400,
+                detail="User tidak ditemukan"
+            )
+
+        if not verify_password(password, user.password_hash):
+            raise HTTPException(
+                status_code=400,
+                detail="Password salah"
+            )
+
+        token = create_access_token(
+            {"sub": str(user.id)}
+        )
+
+        return {
+            "access_token": token,
+            "token_type": "bearer"
         }
-        for c in colors
-    ])
 
-@app.delete("/api/colors/{color_id}")
-async def delete_color(color_id: str):
-    if USE_MONGO:
-        color = db.colors.find_one({"_id": oid(color_id), "deleted": {"$ne": True}})
-        if not color:
-            raise HTTPException(status_code=404, detail="Warna tidak ditemukan")
-        if db.variants.find_one({"color_id": oid(color_id), "deleted": {"$ne": True}}):
-            raise HTTPException(status_code=400, detail="Tidak bisa hapus warna yang masih dipakai varian")
-        db.colors.update_one({"_id": oid(color_id)}, {"$set": {"deleted": True}})
-    else:
-        data = load_json("colors", {"items": []})
-        found = next((c for c in data["items"] if str(c.get("id")) == color_id and not c.get("deleted")), None)
-        if not found:
-            raise HTTPException(status_code=404, detail="Warna tidak ditemukan")
-        if any(str(v.get("color_id")) == color_id and not v.get("deleted") for v in get_variants()):
-            raise HTTPException(status_code=400, detail="Tidak bisa hapus warna yang masih dipakai varian")
-        found["deleted"] = True
-        save_json("colors", data)
-    return {"message": "Warna dihapus"}
+    except Exception as e:
+        print("LOGIN ERROR:", e)
+        raise e
 
-# ============================================================
-# ENTRYPOINT
-# ============================================================
+@app.post("/logout")
+async def logout(response: Response):
+    response.delete_cookie(key="token", path="/", samesite="lax")
+    return {"message": "Logged out"}
+    
+@app.get("/api/me")
+def get_me(current_user: User = Depends(get_current_user)):
+    return {
+        "id": current_user.id,
+        "username": current_user.username,
+        "role": current_user.role
+    }
+    
+# ================= BALANCE =================
+
+@app.get("/balance")
+def get_balance(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    return {
+        "balance": current_user.balance
+    }
+
+# ================= DEPOSIT =================
+class DepositRequest(BaseModel):
+    amount: int
+    method: str
+
+@app.post("/deposit")
+async def deposit(
+    data: DepositRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    method_key = data.method.upper().strip()
+    method_config = PAYMENT_METHODS.get(method_key)
+
+    if not method_config:
+        raise HTTPException(status_code=400, detail="Metode tidak valid")
+
+    payload = {
+        "appId": APP_ID,
+        "merOrderNo": str(uuid.uuid4()),
+        "notifyUrl": "https://bola433.my.id/webhook/starpago",
+
+        "currency": "IDR",
+        "amount": str(data.amount),
+        "payMethod": method_config["payMethod"],
+
+        "extra": {
+            "accountName": current_user.username or "USER",
+            "accountNo": current_user.phone or "0810000000",
+            "bankCode": method_config["channelCode"],
+            "email": current_user.email or "user@gmail.com",
+            "mobile": current_user.phone or "0810000000"
+        },
+
+        "returnUrl": "/",
+        "attach": "StarPago"
+    }
+
+    try:
+        sign, raw_string = generate_sign(payload, APP_SECRET)
+        payload["sign"] = sign
+
+        print("SIGN STRING:", raw_string)
+        print("SIGN:", sign)
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                STARPAGO_URL,
+                json=payload
+            )
+
+        result = response.json()
+        print("STARPAGO RESPONSE:", result)
+
+        if result.get("code") == 200:
+            new_depo = Deposit(
+                user_id=current_user.id,
+                amount=data.amount,
+                method=method_key,
+                reference=payload["merOrderNo"],
+                status="pending"
+            )
+            db.add(new_depo)
+            db.commit()
+
+        return result
+
+    except Exception as e:
+        print("ERROR:", str(e))
+        raise HTTPException(status_code=500, detail="Deposit error")
+
+@app.post("/webhook/starpago")
+async def starpago_callback(req: Request, db: Session = Depends(get_db)):
+
+    body = await req.json()
+
+    received_sign = body.get("sign")
+    expected_sign, _ = generate_sign(body, APP_SECRET)
+
+    if received_sign != expected_sign:
+        return {"msg": "Invalid sign"}
+
+    order_id = body.get("merOrderNo")
+    status = body.get("status", "").lower()
+
+    deposit = db.query(Deposit).filter(Deposit.reference == order_id).first()
+
+    if not deposit:
+        return {"msg": "Not found"}
+
+    if deposit.status == "paid":
+        return {"msg": "Already processed"}
+
+    if status == "success":
+        deposit.status = "paid"
+        user = db.query(User).filter(User.id == deposit.user_id).with_for_update().first()
+        
+        if user:
+            user.balance += Decimal(str(deposit.amount))
+            
+            try:
+                res = await lunexa_deposit(user.username, int(deposit.amount))
+                
+                if res and res.get("status") == 1:
+                    user.balance -= Decimal(str(deposit.amount))
+                    print(f"AUTO DEPO LUNEXA SUCCESS: {user.username}")
+            except Exception as e:
+                print(f"AUTO DEPO LUNEXA FAILED: {e}")
+
+    db.commit()
+    return {"msg": "OK"}
+# ================= WITHDRAW REQUEST =================
+
+@app.post("/withdraw")
+async def withdraw(
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        body = await req.json()
+        amount = Decimal(str(body.get("amount", "0")))
+        method = body.get("method")
+        account = body.get("account")
+    except (InvalidOperation, Exception):
+        raise HTTPException(status_code=400, detail="Format amount salah")
+
+    if amount <= 0:
+        raise HTTPException(status_code=400, detail="Amount harus > 0")
+    if not method or not account:
+        raise HTTPException(status_code=400, detail="Metode dan akun wajib diisi")
+
+    user = db.query(User).filter(User.id == current_user.id).with_for_update().first()
+    if user.balance < amount:
+        raise HTTPException(status_code=400, detail="Saldo tidak cukup")
+
+    user.balance -= amount 
+
+    new_withdraw = Withdraw(
+        user_id=user.id,
+        amount=amount,
+        method=method,
+        account=account,
+        status=WithdrawStatus.pending,
+        created_at=datetime.utcnow(),
+        updated_at=datetime.utcnow()
+    )
+
+    db.add(new_withdraw)
+    db.commit() 
+    db.refresh(new_withdraw)
+    
+    message = f"""
+<b>🔔 REQUEST WITHDRAW</b>
+
+<b>ID:</b> <code>{new_withdraw.id}</code>
+<b>User:</b> {user.username}
+<b>Jumlah:</b> Rp {amount:,.0f}
+<b>Metode:</b> {method} ({account})
+
+<b>Aksi Manual:</b>
+Setujui: <code>/approve {new_withdraw.id}</code>
+Tolak: <code>/reject {new_withdraw.id}</code>
+Paid: <code>/paid {new_withdraw.id}</code>
+"""
+
+    return {
+        "msg": "Withdraw pending, menunggu konfirmasi admin",
+        "withdraw_id": new_withdraw.id,
+        "new_balance": float(user.balance)
+    }
+
+async def process_withdraw_update(wid: int, action: str, db: Session):
+
+    withdraw = db.query(Withdraw).filter(Withdraw.id == wid).first()
+    if not withdraw:
+        return f"❌ ID {wid} tidak ditemukan"
+
+    user = db.query(User).filter(User.id == withdraw.user_id).first()
+    if not user:
+        return f"❌ User tidak ditemukan"
+
+    if action == "approve":
+
+        if withdraw.status != WithdrawStatus.pending:
+            return f"⚠️ WD {wid} tidak bisa di approve"
+
+        withdraw.status = WithdrawStatus.approved
+        msg = f"✅ WD ID {wid} DISETUJUI"
+
+    elif action == "paid":
+
+        if withdraw.status == WithdrawStatus.paid:
+            return f"⚠️ WD {wid} sudah dibayar"
+
+        if withdraw.status != WithdrawStatus.approved:
+            return f"⚠️ WD {wid} harus APPROVED dulu"
+
+        withdraw.status = WithdrawStatus.paid
+        msg = f"💸 WD ID {wid} SUDAH DIBAYAR"
+
+    elif action == "reject":
+
+        if withdraw.status not in [WithdrawStatus.pending, WithdrawStatus.approved]:
+            return f"⚠️ WD {wid} tidak bisa ditolak"
+
+        withdraw.status = WithdrawStatus.rejected
+        user.balance += withdraw.amount
+
+        msg = f"❌ WD ID {wid} DITOLAK & SALDO DIKEMBALIKAN"
+
+    withdraw.updated_at = datetime.utcnow()
+    db.commit()
+
+    return msg
+
+    
+# ================= TELEGRAM WEBHOOK HANDLER =================
+
+async def handle_telegram_update_webhook(update: dict, db: Session):
+    message = update.get("message")
+    if not message or "text" not in message:
+        return
+
+    text = message.get("text").strip()
+    
+    if text.startswith("/approve") or text.startswith("/reject") or text.startswith("/paid"):
+        parts = text.split()
+        if len(parts) < 2:
+            send_telegram_message("❌ Format salah. Contoh: <code>/approve 10</code>")
+            return
+
+        command = parts[0].replace("/", "")
+        try:
+            wid = int(parts[1])
+            response_msg = await process_withdraw_update(wid, command, db)
+            send_telegram_message(response_msg)
+        except ValueError:
+            send_telegram_message("❌ ID harus berupa angka!")
+
+@app.post("/bot/telegram-webhook")
+async def telegram_webhook(
+    req: Request,
+    db: Session = Depends(get_db)
+):
+    try:
+        update = await req.json()
+        await handle_telegram_update_webhook(update, db)
+        return {"ok": True}
+    except Exception as e:
+        print(f"Error Webhook: {e}")
+        return {"ok": False}
+
+@app.get("/withdraw/status/{withdraw_id}")
+def withdraw_status(
+    withdraw_id: int,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    withdraw = db.query(Withdraw).filter(
+        Withdraw.id == withdraw_id,
+        Withdraw.user_id == current_user.id
+    ).first()
+
+    if not withdraw:
+        raise HTTPException(status_code=404, detail="Withdraw tidak ditemukan")
+
+    return {
+        "status": withdraw.status
+    }
+    
+# ================= TRANSACTION HISTORY =================
+
+@app.get("/transactions")
+async def get_transactions(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    deposits = db.query(Deposit).filter(
+        Deposit.user_id == current_user.id
+    ).all()
+
+    withdraws = db.query(Withdraw).filter(
+        Withdraw.user_id == current_user.id
+    ).all()
+
+    history = []
+
+    for d in deposits:
+        history.append({
+            "type": "deposit",
+            "amount": float(d.amount),
+            "method": d.method,
+            "status": d.status,
+            "date": d.created_at
+        })
+
+    for w in withdraws:
+        history.append({
+            "type": "withdraw",
+            "amount": float(w.amount),
+            "method": w.method,
+            "status": w.status,
+            "date": w.created_at
+        })
+        
+    history.sort(key=lambda x: x["date"], reverse=True)
+
+    return history
+ 
+    
+# ================= USER INFO =================
+
+@app.get("/api/user/me")
+async def get_me(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        user = db.query(User).filter(User.id == current_user.id).first()
+
+        return {
+            "id": user.id,
+            "username": user.username,
+            "balance": float(user.balance),
+            "profile_pic": user.profile_pic or "default.png"
+        }
+
+    except Exception as e:
+        print(f"ERROR API ME: {str(e)}")
+        return JSONResponse(status_code=500, content={"detail": "Internal Server Error"})
+
+
+
+
+@app.post("/api/user/upload-profile")
+async def upload_profile_pic(
+    file: UploadFile = File(...), 
+    db: Session = Depends(get_db), 
+    current_user: User = Depends(get_current_user)
+):
+    
+    allowed_extensions = ["jpg", "jpeg", "png"]
+    file_ext = file.filename.split(".")[-1].lower()
+    if file_ext not in allowed_extensions:
+        raise HTTPException(status_code=400, detail="Hanya file JPG atau PNG bro")
+
+    filename = f"profile_{current_user.id}_{uuid.uuid4().hex[:6]}.{file_ext}"
+    upload_path = Path("static/uploads/profile")
+    upload_path.mkdir(parents=True, exist_ok=True)
+    
+    file_path = upload_path / filename
+
+    with file_path.open("wb") as buffer:
+        shutil.copyfileobj(file.file, buffer)
+
+    user_to_update = db.merge(current_user) 
+    
+    user_to_update.profile_pic = filename
+    
+    db.commit()      
+    db.refresh(user_to_update) 
+
+    return {"msg": "Foto profil berhasil diperbarui", "filename": filename}
+
+
+    
+# ================= UPDATE USER =================
+
+class UpdateUsernameRequest(BaseModel):
+    username: str
+    
+@app.put("/api/user/username")
+def update_username(
+    data: UpdateUsernameRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+
+    existing = db.query(User).filter(
+        User.username == data.username
+    ).first()
+
+    if existing and existing.id != user.id:
+        raise HTTPException(status_code=400, detail="Username sudah dipakai")
+
+    user.username = data.username
+    db.commit()
+
+    return {"message": "Username berhasil diupdate"}
+    
+# ================= UPDATE PASSWORD =================
+class UpdatePasswordRequest(BaseModel):
+    current_password: str
+    new_password: str
+    
+@app.put("/api/user/password")
+def update_password(
+    data: UpdatePasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+
+    if not verify_password(data.current_password, user.password_hash):
+        raise HTTPException(status_code=400, detail="Password lama salah")
+
+    user.password_hash = hash_password(data.new_password)
+
+    db.commit()
+
+    return {"message": "Password berhasil diupdate"}
+    
+@app.get("/api/admin/users")
+async def get_all_users(
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)
+):
+    users = db.query(User).all()
+    return [
+        {
+            "id": u.id,
+            "username": u.username,
+            "email": u.email,
+            "phone": u.phone,
+            "balance": float(u.balance),
+            "ref_code": u.ref_code
+        } for u in users
+    ]
+
+@app.delete("/api/admin/user/{user_id}")
+async def admin_delete_user(admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)):
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="User tidak ditemukan")
+    
+    db.delete(user)
+    db.commit()
+    return {"message": f"User {user.username} berhasil dihapus"}
+    
+# ================= DELETE USER =================
+
+@app.delete("/api/user/delete")
+async def delete_user(
+    force: bool = False,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    user = db.query(User).filter(User.id == current_user.id).first()
+
+    if not user:
+        raise HTTPException(status_code=404, detail="User not found")
+
+    bets_count = db.query(Bet).filter(Bet.user_id == user.id).count()
+
+    if bets_count > 0 and not force:
+        return {
+            "has_bets": True,
+            "total_bets": bets_count
+        }
+
+    db.query(Bet).filter(Bet.user_id == user.id).delete()
+    db.delete(user)
+    db.commit()
+
+    return {"msg": "Account deleted successfully"}
+# ================= ODDS API =================
+LEAGUE_MAP = {
+	"soccer_uefa_europa_league": "UEFA Europa League",
+	"soccer_uefa_europa_conference_league": "UEFA Europa Conference League",
+	"soccer_uefa_champs_league": "UEFA Champions League",
+    "soccer_epl": "Premier League",
+    "soccer_spain_la_liga": "La Liga",
+    "soccer_italy_serie_a": "Serie A",
+    "soccer_germany_bundesliga": "Bundesliga",
+    "soccer_france_ligue_one": "Ligue 1",
+}
+@app.get("/api/matches/{league}")
+async def get_matches(league: str):
+    if league not in LEAGUES:
+        raise HTTPException(status_code=404, detail="League not supported")
+
+    matches = ODDS_CACHE.get(league, [])
+
+    enriched_matches = []
+    for m in matches:
+        enriched = {
+            **m,
+            "league_key": league,
+            "league_name": LEAGUE_MAP.get(league, league)
+        }
+        enriched_matches.append(enriched)
+
+    return enriched_matches
+
+async def fetch_all_odds():
+    print("[ODDS] Updating cache...")
+
+    async with httpx.AsyncClient(timeout=15) as client:
+        for league in LEAGUES:
+            url = f"https://api.the-odds-api.com/v4/sports/{league}/odds"
+            params = {
+                "apiKey": ODDS_API_KEY,
+                "regions": "eu",
+                "markets": "h2h",
+                "oddsFormat": "decimal"
+            }
+
+            try:
+                response = await client.get(url, params=params)
+
+                if response.status_code == 200:
+                    ODDS_CACHE[league] = response.json()
+                    print(f"[ODDS] Updated {league}")
+                else:
+                    print(f"[ODDS ERROR] {league} -> {response.text}")
+
+            except Exception as e:
+                print(f"[ODDS EXCEPTION] {league} -> {e}")
+
+            await asyncio.sleep(1.2) 
+
+    print("[ODDS] Cache update done")
+
+# ================= PLACE BET (UPDATED & SECURE) =================
+@app.post("/place-bet")
+async def place_bet(
+    req: Request,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    try:
+        body = await req.json()
+
+        try:
+            stake = Decimal(str(body.get("stake", "0")))
+        except InvalidOperation:
+            raise HTTPException(status_code=400, detail="Stake tidak valid")
+
+        pick = body.get("pick")
+        sport_key = body.get("sport_key")
+        event_id = body.get("event_id")
+
+        if not event_id or not pick:
+            raise HTTPException(status_code=400, detail="Data tidak lengkap")
+
+        if stake <= 0:
+            raise HTTPException(status_code=400, detail="Stake harus > 0")
+
+        league_data = ODDS_CACHE.get(sport_key)
+        if not league_data:
+            raise HTTPException(status_code=400, detail="League tidak ditemukan")
+
+        event_data = next((e for e in league_data if e["id"] == event_id), None)
+        if not event_data:
+            raise HTTPException(status_code=400, detail="Event tidak valid")
+
+        match_time = datetime.fromisoformat(
+            event_data["commence_time"].replace("Z", "+00:00")
+        )
+
+        if match_time < datetime.now(timezone.utc):
+            raise HTTPException(status_code=400, detail="Match sudah dimulai")
+
+        real_odds = None
+        for bookmaker in event_data.get("bookmakers", []):
+            for market in bookmaker.get("markets", []):
+                if market.get("key") == "h2h":
+                    for outcome in market.get("outcomes", []):
+                        if outcome.get("name") == pick:
+                            real_odds = outcome.get("price")
+                            break
+
+        if not real_odds:
+            raise HTTPException(status_code=400, detail="Odds tidak ditemukan")
+
+        odds = Decimal(str(real_odds))
+
+        # 🔥 UPDATE SALDO (ATOMIC)
+        updated = db.query(User).filter(
+            User.id == current_user.id,
+            User.balance >= stake
+        ).update({
+            User.balance: User.balance - stake
+        })
+
+        if updated == 0:
+            raise HTTPException(status_code=400, detail="Saldo tidak cukup")
+
+        # 🔥 SIMPAN BET
+        new_bet = Bet(
+            user_id=current_user.id,
+            home=event_data.get("home_team"),
+            away=event_data.get("away_team"),
+            selected=pick,
+            odds=odds,
+            stake=stake,
+            sport_key=sport_key,
+            commence_time=match_time,
+            event_id=event_id,
+            status="pending"
+        )
+
+        db.add(new_bet)
+        db.commit()
+
+        # 🔥 ambil user terbaru dari DB
+        user = db.query(User).filter(User.id == current_user.id).first()
+
+    except Exception as e:
+        db.rollback()
+        print(f"ERROR PLACE BET: {e}")
+        raise HTTPException(status_code=500, detail="Gagal memproses taruhan")
+
+    # 🔔 TELEGRAM (optional)
+    try:
+        from bottele import send_telegram_message
+        message = f"""
+<b>🔔 BETTING DETECTED</b>
+
+<b>User:</b> <code>{user.username}</code>
+<b>Match:</b> {new_bet.home} vs {new_bet.away}
+<b>Pick:</b> {new_bet.selected}
+<b>Odds:</b> {new_bet.odds}
+<b>Stake:</b> Rp {new_bet.stake:,.0f}
+<b>New Balance:</b> Rp {user.balance:,.0f}
+"""
+        send_telegram_message(message)
+    except:
+        pass
+
+    return {
+        "msg": "Bet placed",
+        "new_balance": float(user.balance) # Tambahin ini bro!
+    }
+
+# ================= BET HISTORY =================
+
+@app.get("/bet-history")
+async def bet_history(
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+
+    bets = db.query(Bet).filter(
+        Bet.user_id == current_user.id
+    ).order_by(Bet.id.desc()).all()
+
+    return [
+        {
+            "id": bet.id,
+            "home": bet.home,
+            "away": bet.away,
+            "selected": bet.selected,
+            "odds": bet.odds,
+            "stake": bet.stake,
+            "status": bet.status,
+            "commence_time": bet.commence_time,
+            "league_key": bet.sport_key,
+            "league_name": LEAGUE_MAP.get(bet.sport_key, bet.sport_key)
+        }
+        for bet in bets
+    ]
+
+
+# ================= UPDATE BET RESULT =================
+
+async def update_bet_results(db: Session):
+
+    pending_bets = db.query(Bet).filter(Bet.status == "pending").all()
+
+    print(f"[AUTO UPDATE] Checking {len(pending_bets)} pending bets")
+
+    if not pending_bets:
+        return
+
+    bets_by_league = {}
+
+    for bet in pending_bets:
+        bets_by_league.setdefault(bet.sport_key, []).append(bet)
+
+    async with httpx.AsyncClient(timeout=10) as client:
+
+        for sport_key, bets in bets_by_league.items():
+
+            url = f"https://api.the-odds-api.com/v4/sports/{sport_key}/scores"
+
+            params = {
+                "apiKey": ODDS_API_KEY,
+                "daysFrom": 3
+            }
+
+            try:
+
+                response = await client.get(url, params=params)
+
+                if response.status_code != 200:
+                    print("[FETCH FAILED]", response.text)
+                    continue
+
+                data = response.json()
+
+            except Exception as e:
+                print("[FETCH ERROR]", e)
+                continue
+
+            if not data:
+                continue
+
+            for bet in bets:
+
+                event_result = next(
+                    (ev for ev in data if ev.get("id") == bet.event_id),
+                    None
+                )
+
+                if not event_result:
+                    continue
+
+                if not event_result.get("completed"):
+                    continue
+
+                scores = event_result.get("scores")
+
+                if not scores:
+                    continue
+
+                try:
+
+                    home_score = int(
+                        next(s["score"] for s in scores if s["name"] == bet.home)
+                    )
+
+                    away_score = int(
+                        next(s["score"] for s in scores if s["name"] == bet.away)
+                    )
+
+                except StopIteration:
+                    continue
+
+                payout = 0
+
+                if home_score > away_score and bet.selected == bet.home:
+
+                    bet.status = "win"
+                    payout = bet.stake * bet.odds
+
+                elif away_score > home_score and bet.selected == bet.away:
+
+                    bet.status = "win"
+                    payout = bet.stake * bet.odds
+
+                elif home_score == away_score and bet.selected.lower() == "draw":
+
+                    bet.status = "win"
+                    payout = bet.stake * bet.odds
+
+                else:
+
+                    bet.status = "lose"
+
+                    # ================= REFERRAL COMMISSION =================
+
+                    user = db.query(User).filter(
+                        User.id == bet.user_id
+                    ).first()
+
+                    if user and user.referred_by:
+
+                        referrer = db.query(User).filter(
+                            User.id == user.referred_by
+                        ).first()
+
+                        if referrer:
+
+                            commission = bet.stake * Decimal("0.10")
+
+                            referrer.balance += commission
+                            referrer.ref_earnings += commission
+
+                            print(
+                                f"[REFERRAL] {referrer.username} earned {commission} from {user.username}"
+                            )
+
+                if bet.status == "win":
+
+                    user = db.query(User).filter(
+                        User.id == bet.user_id
+                    ).first()
+
+                    if user:
+                        user.balance += payout
+
+                print(
+                    f"[RESULT] Bet {bet.id} -> {bet.status}, payout={payout}"
+                )
+
+            db.commit()
+# ================= SCHEMA =================
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
+# ================= ADMIN LOGIN =================
+from fastapi.responses import JSONResponse
+from auth import create_access_token, verify_password 
+
+@app.post("/api/admin/login")
+def admin_login(data: AdminLoginRequest, db: Session = Depends(get_db)):
+    
+    user = db.query(User).filter(User.username == data.username).first()
+
+    if not user:
+        raise HTTPException(status_code=401, detail="User tidak ditemukan")
+
+    if user.role != "admin":
+        raise HTTPException(status_code=403, detail="Akses ditolak, Anda bukan admin")
+
+    if not verify_password(data.password, user.password_hash):
+        raise HTTPException(status_code=401, detail="Password salah")
+
+    jwt_token = create_access_token({"sub": str(user.id)})
+
+    response = JSONResponse(content={
+        "message": "Login berhasil",
+        "role": user.role
+    })
+    
+    response.set_cookie(
+        key="token",
+        value=jwt_token,
+        httponly=True,
+        secure=True, 
+        samesite="none",
+        max_age=172800
+    )
+    
+    return response
+# ================= ADMIN DASHBOARD =================
+@app.get("/api/admin/dashboard-stats")
+async def get_dashboard_stats(admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)):
+    now = datetime.now()
+    t_start = datetime(now.year, now.month, now.day, 0, 0, 0)
+    t_end = datetime(now.year, now.month, now.day, 23, 59, 59)
+    
+    # Statistik Utama
+    total_depo = db.query(func.sum(Deposit.amount)).filter(Deposit.created_at >= t_start, Deposit.created_at <= t_end, Deposit.status == "success").scalar() or 0
+    total_wd = db.query(func.sum(Withdraw.amount)).filter(Withdraw.created_at >= t_start, Withdraw.created_at <= t_end, Withdraw.status.in_(["approved", "paid"])).scalar() or 0
+    
+    # Logika Chart 7 Hari
+    labels, deposits, withdraws = [], [], []
+    for i in range(6, -1, -1):
+        d = date.today() - timedelta(days=i)
+        ds = datetime.combine(d, time.min)
+        de = datetime.combine(d, time.max)
+        
+        dv = db.query(func.sum(Deposit.amount)).filter(Deposit.created_at >= ds, Deposit.created_at <= de, Deposit.status == "success").scalar() or 0
+        wv = db.query(func.sum(Withdraw.amount)).filter(Withdraw.created_at >= ds, Withdraw.created_at <= de, Withdraw.status.in_(["approved", "paid"])).scalar() or 0
+        
+        labels.append(d.strftime("%d %b"))
+        deposits.append(float(dv))
+        withdraws.append(float(wv))
+
+    recent_wd = db.query(Withdraw).order_by(Withdraw.id.desc()).limit(5).all()
+    logs = []
+    for r in recent_wd:
+        u = db.query(User).filter(User.id == r.user_id).first()
+        logs.append({"msg": f"WD {u.username if u else 'User'} - {r.status}", "time": r.created_at.strftime("%H:%M")})
+
+    return {
+        "deposit_today": float(total_depo),
+        "withdraw_today": float(total_wd),
+        "profit": float(total_depo - total_wd),
+        "total_user": db.query(User).count(),
+        "recent_logs": logs,
+        "chart": {"labels": labels, "deposits": deposits, "withdraws": withdraws}
+    }
+
+    
+@app.get("/api/admin/withdraws")
+async def get_all_withdraws(admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)):
+    withdraws = db.query(Withdraw).order_by(Withdraw.id.desc()).all()
+    
+    result = []
+    for w in withdraws:
+        user = db.query(User).filter(User.id == w.user_id).first()
+        result.append({
+            "id": w.id,
+            "username": user.username if user else "Unknown",
+            "amount": float(w.amount),
+            "method": w.method,
+            "account": w.account,
+            "status": w.status,
+            "date": w.created_at.strftime("%H:%M") 
+        })
+    return result
+
+# ================= ADMIN WHIDRAW =================
+
+class WithdrawAction(BaseModel):
+    withdraw_id: int
+    action: str  # "approve", "reject", "paid"
+    
+@app.post("/api/admin/withdraw/action")
+async def admin_withdraw_action(body: WithdrawAction,
+    admin: User = Depends(get_admin_user),
+    db: Session = Depends(get_db)):
+    wid = body.withdraw_id
+    action = body.action # 'approve', 'reject', atau 'paid'
+    
+    msg = await process_withdraw_update(wid, action, db)
+    
+    if "❌" in msg or "⚠️" in msg:
+        raise HTTPException(status_code=400, detail=msg)
+        
+    return {"message": msg}
+    
+# ================= REFERRAL ENDPOINT (FINAL FIX) =================
+
+
+@app.get("/api/referral/leaderboard")
+async def get_referral_leaderboard(db: Session = Depends(get_db)):
+    try:
+        top_referrers = db.query(
+            User.username,
+            func.count(User.id).label("total_ref")
+        ).filter(User.referred_by != None) \
+         .group_by(User.referred_by) \
+         .order_by(func.count(User.id).desc()) \
+         .limit(10).all()
+
+        leaderboard = []
+        for index, row in enumerate(top_referrers):
+            leaderboard.append({
+                "rank": index + 1,
+                "username": row.username[:3] + "***" if row.username else "User",
+                "total_ref": row.total_ref
+            })
+
+        return leaderboard
+    except Exception as e:
+        print(f"Leaderboard Error: {e}")
+        return []
+
+# ================= GET ALL BETS (ADMIN) =================
+
+@app.get("/api/admin/bets")
+def get_all_bets(
+    status: Optional[str] = Query(None),
+    db: Session = Depends(get_db),
+    admin: User = Depends(get_admin_user)
+):
+    
+    query = db.query(Bet).options(joinedload(Bet.user))
+
+    if status and status != "all":
+        query = query.filter(Bet.status == status)
+
+    bets = query.order_by(Bet.created_at.desc()).all()
+
+    result = []
+
+    for bet in bets:
+        payout = float((bet.stake or 0) * (bet.odds or 0))
+
+        result.append({
+            "id": bet.id,
+            "time": bet.created_at.strftime("%H:%M") if bet.created_at else "-",
+            "date": bet.created_at.strftime("%d/%m") if bet.created_at else "-",
+            "username": bet.user.username if bet.user else "unknown",
+            "match": f"{bet.home} vs {bet.away}",
+            "pick": bet.selected, 
+            "odds": float(bet.odds or 0),
+            "stake": float(bet.stake or 0),
+            "win_amount": payout,
+            "status": bet.status 
+        })
+
+    return result
+
+# ================= CHAT ENDPOINTS =================
+class ChatCreate(BaseModel):
+    message: str
+
+@app.get("/api/admin/chat/messages")
+async def get_messages(
+    last_id: int = Query(0), 
+    db: Session = Depends(get_db), 
+    admin: User = Depends(get_admin_user)
+):
+    
+    for _ in range(60):  
+        msgs = db.query(ChatMessage).filter(ChatMessage.id > last_id).order_by(ChatMessage.id.asc()).all()
+        
+        if msgs:
+            return [{"id": m.id, "name": m.username, "text": m.message, "time": m.created_at.strftime("%H:%M")} for m in msgs]
+        
+        await asyncio.sleep(0.5) 
+    
+    return [] 
+
+@app.post("/api/admin/chat/send")
+async def send_message(data: ChatCreate, db: Session = Depends(get_db), admin: User = Depends(get_admin_user)):
+    new_msg = ChatMessage(username=admin.username, message=data.message)
+    db.add(new_msg)
+    db.commit()
+    return {"status": "sent"}
+    
+# ================= UPDATE ODDS =================
+async def auto_update_odds():
+    while True:
+        await fetch_all_odds()
+        await asyncio.sleep(10800)  
+# ================= MANUAL TRIGGER UPDATE BETS =================
+@app.post("/update-bets")
+async def trigger_update_bets(db: Session = Depends(get_db)):
+    await update_bet_results(db)
+    return {"msg": "Bets updated"}
+
+# ================= LIVE STREAM SYNC (WeStream) =================
+
+async def fetch_live_streams() -> None:
+    global LIVE_CACHE
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            resp = await client.get(f"{WESTREAM_BASE}{WESTREAM_MATCHES_ENDPOINT}")
+            if resp.status_code == 200:
+                data = resp.json()
+                async with LIVE_CACHE_LOCK:
+                    LIVE_CACHE = data if isinstance(data, list) else []
+                print(f"[LIVE] Fetched {len(LIVE_CACHE)} live matches from WeStream")
+            else:
+                print(f"[LIVE ERROR] WeStream returned {resp.status_code}")
+    except Exception as e:
+        print(f"[LIVE EXCEPTION] {e}")
+
+
+import re
+import unicodedata
+
+# ── Normalize: lowercase, strip aksen, buang non-alphanum ──────
+def _norm(text: str) -> str:
+    text = unicodedata.normalize("NFD", text.lower().strip())
+    text = "".join(c for c in text if not unicodedata.combining(c))
+    text = re.sub(r"[^a-z0-9 ]", "", text)
+    return re.sub(r"\s+", " ", text).strip()
+
+# ── Mapping: Odds API name → semua kemungkinan nama WeStream ──
+# Key   = nama PERSIS dari Odds API (sudah dinormalisasi)
+# Value = list variasi yang mungkin muncul di WeStream title
+TEAM_SYNC: dict[str, list[str]] = {
+    # === EPL ===
+    "brighton and hove albion": ["brighton", "brighton hove albion", "brighton & hove albion"],
+    "wolverhampton wanderers": ["wolverhampton", "wolves", "wolverhampton wanderers"],
+    "tottenham hotspur":       ["tottenham", "spurs", "tottenham hotspur"],
+    "nottingham forest":       ["nottingham forest", "nottm forest", "notts forest"],
+    "newcastle united":        ["newcastle", "newcastle united"],
+    "manchester united":       ["manchester united", "man united", "man utd"],
+    "manchester city":         ["manchester city", "man city"],
+    "west ham united":         ["west ham", "west ham united"],
+    "aston villa":             ["aston villa"],
+    "crystal palace":          ["crystal palace"],
+
+    # === La Liga ===
+    "atletico madrid":         ["atletico madrid", "atletico de madrid", "atletico"],
+    "ca osasuna":              ["osasuna", "ca osasuna"],
+    "real sociedad":           ["real sociedad"],
+    "real betis":              ["real betis", "betis"],
+    "athletic bilbao":         ["athletic bilbao", "athletic club", "bilbao"],
+    "alaves":                  ["alaves", "deportivo alaves"],
+    "rayo vallecano":          ["rayo vallecano", "rayo"],
+    "celta vigo":              ["celta vigo", "celta"],
+    "elche cf":                ["elche"],
+
+    # === Serie A ===
+    "inter milan":             ["inter milan", "inter", "internazionale", "fc internazionale"],
+    "ac milan":                ["ac milan", "milan"],
+    "as roma":                 ["roma", "as roma"],
+    "atalanta bc":             ["atalanta", "atalanta bc"],
+    "hellas verona":           ["verona", "hellas verona"],
+
+    # === Ligue 1 ===
+    "paris saint germain":     ["psg", "paris saint germain", "paris saint-germain", "paris sg"],
+    "as monaco":               ["monaco", "as monaco"],
+    "olympique lyon":          ["lyon", "olympique lyonnais"],
+    "rc lens":                 ["lens", "rc lens"],
+    "stade rennais":           ["rennes", "stade rennais"],
+
+    # === Bundesliga ===
+    "borussia monchengladbach": ["monchengladbach", "gladbach", "borussia mg", "borussia monchengladbach"],
+    "fsv mainz 05":            ["mainz", "fsv mainz", "mainz 05"],
+    "tsg hoffenheim":          ["hoffenheim", "tsg hoffenheim", "1899 hoffenheim"],
+    "vfb stuttgart":           ["stuttgart", "vfb stuttgart"],
+    "sc freiburg":             ["freiburg", "sc freiburg"],
+    "rb leipzig":              ["leipzig", "rb leipzig", "red bull leipzig"],
+    "bayer leverkusen":        ["leverkusen", "bayer leverkusen"],
+    "eintracht frankfurt":     ["frankfurt", "eintracht frankfurt"],
+    "1 fc koln":               ["koln", "cologne", "fc koln", "fc cologne"],
+    "1 fc heidenheim":         ["heidenheim", "fc heidenheim"],
+    "vfl wolfsburg":           ["wolfsburg", "vfl wolfsburg"],
+    "fc st pauli":             ["st pauli", "fc st pauli"],
+    "union berlin":            ["union berlin", "fc union berlin"],
+    "hamburger sv":            ["hamburg", "hamburger sv", "hsv"],
+    "werder bremen":           ["werder bremen", "werder"],
+    "augsburg":                ["augsburg", "fc augsburg"],
+    "borussia dortmund":       ["dortmund", "borussia dortmund", "bvb"],
+    "bayern munich":           ["bayern munich", "bayern", "fc bayern"],
+}
+
+# Pre-build reverse lookup: westream_name_norm → odds_name_norm
+_REVERSE: dict[str, str] = {}
+for odds_norm, variants in TEAM_SYNC.items():
+    for v in variants:
+        _REVERSE[_norm(v)] = odds_norm
+    # juga map diri sendiri
+    _REVERSE[odds_norm] = odds_norm
+
+
+def _to_odds_norm(westream_name: str) -> str:
+    """Kembalikan normalized odds-API name dari westream name, atau name itu sendiri kalau tidak ada di map."""
+    n = _norm(westream_name)
+    return _REVERSE.get(n, n)
+
+
+def _team_match(odds_team: str, ws_home: str, ws_away: str) -> bool:
+    """
+    Cocokkan satu odds_team ke home atau away dari WeStream.
+    Gunakan TEAM_SYNC → reverse lookup, lalu fallback substring.
+    """
+    odds_n = _norm(odds_team)
+    # normalisasi lewat TEAM_SYNC kalau ada
+    odds_canonical = _REVERSE.get(odds_n, odds_n)
+
+    for ws_name in [ws_home, ws_away]:
+        ws_canonical = _to_odds_norm(ws_name)
+        if odds_canonical == ws_canonical:
+            return True
+
+        # Fallback: substring setelah normalisasi
+        ws_n = _norm(ws_name)
+        if odds_n in ws_n or ws_n in odds_n:
+            return True
+
+        # Fallback: token overlap (min 1 kata unik cocok)
+        STOP = {"fc", "cf", "sc", "ac", "as", "de", "la", "united", "city",
+                "real", "club", "sport", "sporting", "atletico", "the", "1", "05"}
+        t1 = set(odds_n.split()) - STOP
+        t2 = set(ws_n.split()) - STOP
+        if t1 and t2 and (t1 & t2):
+            return True
+
+    return False
+
+
+# ── Endpoint /api/live/check ── GANTI YANG LAMA DENGAN INI ───
+@app.get("/api/live/check")
+async def live_check():
+    async with LIVE_CACHE_LOCK:
+        live_matches = list(LIVE_CACHE)
+
+    result: dict = {}
+
+    for sport_key, matches in ODDS_CACHE.items():
+        for m in matches:
+            event_id: str = m.get("id", "")
+            home: str = m.get("home_team", "")
+            away: str = m.get("away_team", "")
+            if not event_id or not home or not away:
+                continue
+
+            for lm in live_matches:
+                # WeStream sekarang punya field teams.home.name / teams.away.name
+                ws_home = lm.get("teams", {}).get("home", {}).get("name", "")
+                ws_away = lm.get("teams", {}).get("away", {}).get("name", "")
+                lm_title = lm.get("title", "")
+
+                # Minimal salah satu tim harus cocok
+                home_match = _team_match(home, ws_home, ws_away)
+                away_match = _team_match(away, ws_home, ws_away)
+
+                if home_match and away_match:
+                    result[event_id] = {
+                        "westream_match_id": lm.get("id"),
+                        "title": lm_title,
+                        "sources": lm.get("sources", []),
+                        "category": lm.get("category", "football"),
+                    }
+                    break
+
+    return result
+    
+@app.get("/api/live/streams/{westream_match_id}")
+async def live_streams(westream_match_id: str):
+    async with LIVE_CACHE_LOCK:
+        match = next((m for m in LIVE_CACHE if m.get("id") == westream_match_id), None)
+
+    if not match:
+        raise HTTPException(status_code=404, detail="Live match not found in cache")
+
+    sources = match.get("sources", [])
+    if not sources:
+        return []
+
+    async with httpx.AsyncClient(timeout=10) as client:
+        tasks = [
+            client.get(f"{WESTREAM_BASE}/stream/{s['source']}/{s['id']}")
+            for s in sources
+        ]
+        responses = await asyncio.gather(*tasks, return_exceptions=True)
+
+    streams: list = []
+    for resp in responses:
+        if isinstance(resp, Exception):
+            continue
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, list):
+                streams.extend(data)
+
+    return streams
+
+
+async def auto_update_live():
+    while True:
+        await asyncio.sleep(120)
+        await fetch_live_streams()
+# ================= AUTO UPDATE SETIAP STARTUP =================
+@app.on_event("startup")
+async def startup_event():
+    await fetch_all_odds()
+    await fetch_live_streams()
+    asyncio.create_task(auto_update_bets())
+    asyncio.create_task(auto_update_odds())
+    asyncio.create_task(auto_update_live())
+
+async def auto_update_bets():
+    while True:
+        db = SessionLocal()
+        try:
+            await update_bet_results(db)
+        finally:
+            db.close()
+        await asyncio.sleep(1800)
+# ================= RUN =================
 if __name__ == "__main__":
-    import uvicorn
-    uvicorn.run(app, host="0.0.0.0", port=int(os.getenv("PORT", "8000")))
+    uvicorn.run("main:app", host="0.0.0.0", port=8888, reload=True)

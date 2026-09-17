@@ -90,6 +90,7 @@
             </select>
             <button id="cartButton" class="header-action hidden ${style.button} ${style.primary}" data-header-for="stock">Keranjang <span id="cartCount">0</span></button>
             <button id="addProductButton" class="header-action hidden ${style.button} ${style.primary}" data-header-for="stock">Tambah produk</button>
+            <button id="aiSearchButton" class="header-action hidden ${style.button} ${style.primary}" data-header-for="stock">AI</button>
           </div>
         </header>
         <div class="mx-auto max-w-7xl p-5 lg:p-10">
@@ -128,6 +129,7 @@
       ${modal("variantModal", "max-w-lg", `<p class="text-xs font-medium tracking-widest text-blue-600">UPDATE UNIT</p><h2 id="variantModalTitle" class="mt-1 text-3xl font-medium">Tambah warna / size</h2>`, variantForm())}
       ${modal("transferModal", "max-w-md", `<p class="text-xs font-medium tracking-widest text-blue-600">PINDAH STOK</p><h2 class="mt-1 text-3xl font-medium">Gudang ke stok jual</h2>`, transferForm())}
       ${sheet("salesSheet", "sm:max-w-md", "salesSheetContent")}
+      ${sheet("aiSearchSheet", "sm:max-w-xl", "aiSearchSheetContent")}
       ${sheet("detailModal", "sm:max-w-lg", "detailContent")}
       ${modal("imageEditModal", "max-w-md", `<p class="text-xs font-medium tracking-widest text-blue-600">FOTO PRODUK</p><h2 class="mt-1 text-3xl font-medium">Ganti gambar produk</h2><p class="mt-1 text-sm text-gray-500">Pilih file atau ambil foto langsung dari kamera.</p>`, imageEditForm())}
       <div id="toast" class="pointer-events-none fixed bottom-24 right-5 z-50 hidden max-w-sm rounded-lg px-4 py-3 text-sm font-medium text-white shadow-xl lg:bottom-5"></div>
@@ -145,7 +147,7 @@
     // 2. CONFIGURATION & STATE
     const API_BASE = window.STOKKU_API_BASE || (window.location.hostname === "localhost" || window.location.hostname === "127.0.0.1" ? `http://${window.location.hostname}:8000` : window.location.origin);
     const localDateKey = d => { const x = new Date(d); return `${x.getFullYear()}-${String(x.getMonth()+1).padStart(2,"0")}-${String(x.getDate()).padStart(2,"0")}`; };
-    const state = { dashboard:null, products:[], variants:[], transactions:[], activityLog:[], page:"dashboard", stockMode:"warehouse", transactionProductId:null, transactionColorId:null, transactionVariantId:null, saleProductId:null, saleColorId:null, saleVariantId:null, cart:[], paymentMethod:"cash", cartDiscountEnabled:false, cartDiscount:0, cartSubmitting:false, productSubmitting:false, historyDate:localDateKey(new Date()), historyTab:"transactions", dashboardFilter:"1d" };
+    const state = { dashboard:null, products:[], variants:[], transactions:[], activityLog:[], page:"dashboard", stockMode:"warehouse", transactionProductId:null, transactionColorId:null, transactionVariantId:null, saleProductId:null, saleColorId:null, saleVariantId:null, cart:[], paymentMethod:"cash", cartDiscountEnabled:false, cartDiscount:0, cartSubmitting:false, productSubmitting:false, ai:{file:null,searching:false,reindexing:false,status:null,results:[]}, historyDate:localDateKey(new Date()), historyTab:"transactions", dashboardFilter:"1d" };
     const $ = id => document.getElementById(id);
     const rupiah = value => new Intl.NumberFormat("id-ID", {style:"currency", currency:"IDR", maximumFractionDigits:0}).format(value || 0);
     const rupiahShort = value => {const n=Number(value)||0;if(n>=1e9)return `Rp${(n/1e9).toFixed(1).replace(/\.0$/,"")}M`;if(n>=1e6)return `Rp${(n/1e6).toFixed(1).replace(/\.0$/,"")}jt`;if(n>=1e3)return `Rp${(n/1e3).toFixed(0)}rb`;return `Rp${n}`;};
@@ -186,8 +188,8 @@
       }
     }
 
-    function compressImage(file, maxDimension=1600, quality=0.82){
-      if(!file || !file.type || !file.type.startsWith("image/") || file.size < 300*1024) return Promise.resolve(file);
+    function compressImage(file, maxDimension=1600, quality=0.82, force=false){
+      if(!file || !file.type || !file.type.startsWith("image/") || (!force && file.size < 300*1024)) return Promise.resolve(file);
       return new Promise(resolve=>{
         const img=new Image(), url=URL.createObjectURL(file);
         const fallback=()=>{URL.revokeObjectURL(url);resolve(file);};
@@ -214,6 +216,82 @@
 
     function showModal(id){ const el=$(id); if(!el)return; el.classList.remove("hidden"); el.classList.add("flex"); const panel=el.querySelector(".sheet-panel"); if(panel) panel.offsetHeight; requestAnimationFrame(()=>{el.classList.remove("opacity-0"); if(panel) panel.classList.remove("translate-y-full","sm:translate-x-full");}); }
     function hideModal(id){ const el=$(id); if(!el)return; el.classList.add("opacity-0"); const panel=el.querySelector(".sheet-panel"); if(panel){panel.classList.add("translate-y-full","sm:translate-x-full"); setTimeout(()=>{el.classList.add("hidden");el.classList.remove("flex");},250);}else{el.classList.add("hidden");el.classList.remove("flex");} }
+
+    // 3. AI PRODUCT SEARCH
+    function aiSheetHtml(){
+      const ai=state.ai;
+      const status=ai.status||{};
+      return `<div class="flex items-start justify-between gap-3"><div><p class="text-xs font-medium tracking-widest text-blue-600">AI PRODUCT SEARCH</p><h2 class="mt-1 text-3xl font-medium">Cari produk dari foto</h2><p class="mt-1 text-sm text-gray-500">Upload satu foto produk, lalu AI mencocokkannya dengan katalog.</p></div><button data-close="aiSearchSheet" class="${style.iconButton}">×</button></div>
+        ${status.remaining>0?`<div class="mt-5 rounded-lg border border-amber-200 bg-amber-50 p-3 text-sm text-amber-900"><div class="flex items-start justify-between gap-3"><div><strong>${status.remaining} produk belum ter-index</strong><p class="mt-1 text-xs text-amber-800">Produk tersebut belum bisa ditemukan oleh pencarian AI.</p></div><button id="aiReindexButton" ${ai.reindexing?"disabled":""} class="${style.button} bg-white px-3 py-2 text-xs font-medium ring-1 ring-amber-200">${ai.reindexing?"Meng-index...":"Index sekarang"}</button></div><div class="mt-3 h-1.5 overflow-hidden rounded-full bg-amber-100"><div id="aiReindexProgress" class="h-full rounded-full bg-amber-500 transition-all" style="width:${status.total?Math.round((status.indexed/status.total)*100):0}%"></div></div><p id="aiReindexText" class="mt-2 text-xs text-amber-800">${status.indexed||0}/${status.total||0} produk</p></div>`:""}
+        <div class="mt-5 rounded-xl border border-gray-200 bg-gray-50 p-4">
+          <div class="grid grid-cols-2 gap-2"><label class="${style.button} ${style.secondary} flex cursor-pointer items-center justify-center gap-2 px-3 py-2.5 text-sm"><span>📁</span><span>Pilih file</span><input id="aiImageFile" type="file" accept="image/jpeg,image/png,image/webp" class="hidden" /></label><label class="${style.button} ${style.secondary} flex cursor-pointer items-center justify-center gap-2 px-3 py-2.5 text-sm"><span>📷</span><span>Kamera</span><input id="aiImageCamera" type="file" accept="image/jpeg,image/png,image/webp" capture="environment" class="hidden" /></label></div>
+          <div class="mt-4 overflow-hidden rounded-lg bg-white ring-1 ring-gray-200 ${ai.file?"":"hidden"}"><img id="aiImagePreview" src="${ai.file?ai.file.previewUrl:""}" alt="Preview pencarian AI" class="max-h-72 w-full object-contain" /></div>
+          <p id="aiImageName" class="mt-2 text-xs text-gray-500">${ai.file?escapeHtml(ai.file.name):"Belum ada gambar dipilih."}</p>
+          <button id="aiSearchSubmit" ${!ai.file||ai.searching?"disabled":""} class="mt-4 w-full ${style.button} ${style.primary} disabled:cursor-not-allowed disabled:opacity-50">${ai.searching?`<span class="inline-flex items-center justify-center gap-2">${spinnerSvg}<span>Mencari...</span></span>`:"Cari produk"}</button>
+        </div>
+        ${ai.results?.mode?aiResultsHtml():ai.searching?"":ai.file?"":"<p class=\"mt-5 rounded-lg bg-gray-50 p-4 text-sm text-gray-500\">Pilih foto produk untuk mulai mencari.</p>"}`;
+    }
+
+    function aiResultsHtml(){
+      const ai=state.ai;
+      const mode=ai.results.mode;
+      if(mode==="not_found") return `<div class="mt-5 rounded-lg bg-gray-50 p-5 text-sm text-gray-600"><strong>Gak ada produk yang mirip ditemukan.</strong><p class="mt-1">Coba foto lain atau cari manual.</p></div>`;
+      const results=ai.results.results||[];
+      if(mode==="confident"){
+        const item=results[0];
+        return `<div class="mt-5"><p class="text-sm font-medium">Produk paling cocok</p>${aiResultCard(item,true)}</div>`;
+      }
+      return `<div class="mt-5"><p class="text-sm font-medium">Beberapa produk mirip ditemukan.</p><div class="mt-3 space-y-3">${results.map(item=>aiResultCard(item,false)).join("")}</div></div>`;
+    }
+
+    function aiResultCard(item,large){
+      return `<article class="overflow-hidden rounded-xl border border-gray-200 bg-white"><div class="${large?"aspect-[16/9]":"flex gap-3 p-3"} overflow-hidden">${large?`<img src="${escapeHtml(photoUrl(item))}" alt="${escapeHtml(item.name)}" class="h-full w-full object-contain bg-gray-50"/>`:`<img src="${escapeHtml(photoUrl(item))}" alt="${escapeHtml(item.name)}" class="size-20 shrink-0 rounded-lg object-cover bg-gray-50"/>`}<div class="${large?"p-4":"min-w-0 flex-1"}"><div class="flex items-start justify-between gap-3"><div class="min-w-0"><p class="${large?"text-lg":"text-sm"} font-medium truncate">${escapeHtml(item.name)}</p><p class="mt-1 text-xs text-gray-500 truncate">${escapeHtml(item.model||"")}</p></div><span class="shrink-0 text-xs font-medium text-gray-500">${Math.round(Number(item.score||0)*100)}%</span></div><button data-ai-sell="${escapeHtml(item.product_id)}" class="mt-3 ${style.button} ${style.primary} w-full px-3 py-2 text-sm">Jual produk ini</button></div></div></article>`;
+    }
+
+    async function loadAIStatus(){
+      try{state.ai.status=await request("/api/ai/status");renderAISheet();}catch(error){state.ai.status={total:0,indexed:0,remaining:0,configured:false};renderAISheet();}}
+    function renderAISheet(){const el=$("aiSearchSheetContent");if(el)el.innerHTML=aiSheetHtml();}
+    async function openAISheet(){state.ai.results=[];state.ai.searching=false;showModal("aiSearchSheet");renderAISheet();await loadAIStatus();}
+    async function prepareAIImage(file){
+      if(!file)return null;
+      let candidate=await compressImage(file,1024,0.72,true);
+      if(candidate.size<=180*1024)return candidate;
+      for(const quality of [0.62,0.52,0.42]){
+        const next=await compressImage(candidate,896,quality,true);
+        if(next.size<candidate.size)candidate=next;
+        if(candidate.size<=180*1024)break;
+      }
+      return candidate;
+    }
+    async function setAIFile(file){
+      if(!file)return;
+      const compressed=await prepareAIImage(file);
+      if(state.ai.file?.previewUrl)URL.revokeObjectURL(state.ai.file.previewUrl);
+      state.ai.file={file:compressed,name:file.name||"foto.jpg",previewUrl:URL.createObjectURL(compressed)};
+      state.ai.results=[];renderAISheet();
+    }
+    async function searchAIProduct(){
+      if(!state.ai.file||state.ai.searching)return;
+      state.ai.searching=true;state.ai.results=[];renderAISheet();
+      try{const fd=new FormData();fd.append("image",state.ai.file.file,state.ai.file.file.name||"ai-search.jpg");const result=await request("/api/ai/search",{method:"POST",body:fd});state.ai.results=result;}catch(error){toast(error.message,true);}finally{state.ai.searching=false;renderAISheet();}
+    }
+    async function reindexAI(){
+      if(state.ai.reindexing)return;
+      state.ai.reindexing=true;renderAISheet();
+      try{
+        while(true){
+          const result=await request("/api/ai/reindex-batch?batch_size=8",{method:"POST"});
+          state.ai.status={...result};renderAISheet();
+          const progress=document.getElementById("aiReindexProgress"),text=document.getElementById("aiReindexText");
+          if(progress)progress.style.width=`${result.total?Math.round((result.indexed/result.total)*100):100}%`;
+          if(text)text.textContent=`${result.indexed}/${result.total} produk`;
+          if(result.errors?.length&&!result.processed){throw new Error(result.errors[0].error||"Index batch gagal");}
+          if(result.remaining<=0)break;
+          if(!result.processed&&result.errors?.length)break;
+        }
+        toast("Index AI selesai.");
+      }catch(error){toast(error.message,true);}finally{state.ai.reindexing=false;await loadAIStatus();}
+    }
 
     // 3. PRODUCT DATA & CARD COMPONENTS
     function groupedProducts(location="all",query=""){
@@ -333,7 +411,7 @@
       $("trendAxis").innerHTML=points.map((pt,i)=>i%labelStep===0?`<span>${escapeHtml(pt.label)}</span>`:"<span></span>").join("");
       const badge=$("trendBadge");badge.textContent=rawMax>0?`${filter==="1d"?"Hari ini":filter==="7d"?"7 hari":filter==="1m"?"30 hari":filter==="1y"?"12 bulan":"Semua data"}`:"Belum ada data";badge.className=style.pill;
     }
-    function renderStock(){const products=groupedProducts(state.stockMode,$("stockSearch").value.trim());if(state.stockMode==="warehouse")products.sort((a,b)=>(a.warehouseTotal<=0?1:0)-(b.warehouseTotal<=0?1:0));document.querySelectorAll(".stock-mode").forEach(button=>{const active=button.dataset.stockMode===state.stockMode;button.className=`stock-mode flex-1 rounded-md px-4 py-2.5 text-sm font-medium ${active?style.modeActive:style.modeIdle}`;});$("stockSummary").textContent=products.length?`${products.length} produk ditemukan di ${state.stockMode==="warehouse"?"gudang":"stok jual"}.`:"";$("stockCards").innerHTML=products.length?products.map(product=>productCard(product,state.stockMode)).join(""):emptyState(`Belum ada produk di ${state.stockMode==="warehouse"?"gudang":"stok jual"}.`);renderCartButton();}
+    function renderStock(){const products=groupedProducts(state.stockMode,$("stockSearch").value.trim());if(state.stockMode==="warehouse")products.sort((a,b)=>(a.warehouseTotal<=0?1:0)-(b.warehouseTotal<=0?1:0));document.querySelectorAll(".stock-mode").forEach(button=>{const active=button.dataset.stockMode===state.stockMode;button.className=`stock-mode flex-1 rounded-md px-4 py-2.5 text-sm font-medium ${active?style.modeActive:style.modeIdle}`;});$("stockSummary").textContent=products.length?`${products.length} produk ditemukan di ${state.stockMode==="warehouse"?"gudang":"stok jual"}.`:"";$("stockCards").innerHTML=products.length?products.map(product=>productCard(product,state.stockMode)).join(""):emptyState(`Belum ada produk di ${state.stockMode==="warehouse"?"gudang":"stok jual"}.`);$("addProductButton").classList.toggle("hidden",state.stockMode!=="warehouse");$("aiSearchButton").classList.toggle("hidden",state.stockMode!=="sale");renderCartButton();}
     function renderCartButton(){const count=state.cart.reduce((total,item)=>total+item.qty,0);$("cartCount").textContent=count;$("cartButton").classList.toggle("hidden",count===0||state.page!=="stock");}
     function recentDates(){const dates=[];for(let offset=0;offset<7;offset++){const date=new Date();date.setHours(12,0,0,0);date.setDate(date.getDate()-offset);dates.push(localDateKey(date));}return dates;}
     function dateLabel(date,offset){if(offset===0)return"Hari ini";if(offset===1)return`Kemarin, ${new Intl.DateTimeFormat("id-ID",{day:"numeric",month:"short"}).format(new Date(`${date}T00:00:00`))}`;return new Intl.DateTimeFormat("id-ID",{day:"numeric",month:"short"}).format(new Date(`${date}T00:00:00`));}
@@ -413,6 +491,9 @@
 
     let addProductBusy=false;
     $("addProductButton").addEventListener("click",()=>{if(addProductBusy||state.productSubmitting)return;addProductBusy=true;const button=$("addProductButton");button.disabled=true;$("productForm").reset();resetColorGroups();showModal("productModal");setTimeout(()=>{addProductBusy=false;button.disabled=false;},350);});
+    $("aiSearchButton").addEventListener("click",openAISheet);
+    $("aiSearchSheetContent").addEventListener("click",async event=>{const sell=event.target.closest("[data-ai-sell]");if(sell){const productId=sell.dataset.aiSell;hideModal("aiSearchSheet");setTimeout(()=>openSalesSheet(productId),260);return;}if(event.target.closest("#aiSearchSubmit"))return searchAIProduct();if(event.target.closest("#aiReindexButton"))return reindexAI();});
+    $("aiSearchSheetContent").addEventListener("change",async event=>{if(event.target.id==="aiImageFile"||event.target.id==="aiImageCamera")await setAIFile(event.target.files?.[0]);});
     $("addColorButton").addEventListener("click",()=>{const button=$("addColorButton");if(button.dataset.busy==="1")return;button.dataset.busy="1";const existingGroups=[...document.querySelectorAll("#colorGroups .color-group")],previousGroup=existingGroups.at(-1),previousRows=previousGroup?collectSizeRowsValues(previousGroup):[],hasValues=previousRows.some(row=>Object.values(row).some(value=>value!==""));$("colorGroups").insertAdjacentHTML("beforeend",colorGroup());const newGroup=[...document.querySelectorAll("#colorGroups .color-group")].at(-1);if(hasValues)applySizeRowsValues(newGroup,previousRows);syncSizeLock(newGroup);newGroup.scrollIntoView({behavior:"smooth",block:"center"});setTimeout(()=>button.dataset.busy="0",180);});
     $("cartButton").addEventListener("click",()=>openSalesSheet(null,"cart"));
     $("stockSearch").addEventListener("input",renderStock);
